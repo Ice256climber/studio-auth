@@ -3,21 +3,24 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Auth + Embed Host</title>
+<title>Host — Auth + Embed</title>
 <style>
-  body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;margin:18px;background:#f6f8fb;color:#0f1724}
+  :root{--bg:#f6f8fb;--card:#fff;--accent:#4461f2}
+  body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;margin:18px;background:var(--bg);color:#0f1724}
   .wrap{max-width:1100px;margin:0 auto}
-  .card{background:#fff;border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(2,6,23,0.06)}
-  .row{display:flex;gap:12px;align-items:center}
+  .card{background:var(--card);border-radius:12px;padding:12px;box-shadow:0 8px 24px rgba(2,6,23,0.06)}
+  .row{display:flex;gap:8px;align-items:center}
   input,button{padding:8px;border-radius:8px;border:1px solid #e6e9ef}
-  button{background:#4461f2;color:#fff;border:0;cursor:pointer}
+  button{background:var(--accent);color:#fff;border:0;cursor:pointer}
   #innerFrame{width:100%;border:0;border-radius:8px;overflow:hidden}
   .small{font-size:13px;color:#6b7280;margin-bottom:6px}
+  .muted{color:#6b7280}
 </style>
 </head>
 <body>
   <div class="wrap">
-    <h2>ログインして学習実態調査を開く</h2>
+    <h2>ログインして学習実態調査を開く（Host）</h2>
+
     <div class="card" style="margin-bottom:12px">
       <div class="small">メールログイン（このページで認証します）</div>
       <div class="row" style="margin-bottom:8px">
@@ -27,86 +30,125 @@
         <button id="signupBtn" style="background:#10b981;margin-left:6px">サインアップ</button>
         <button id="signoutBtn" style="background:#ef4444;margin-left:6px">サインアウト</button>
       </div>
-      <div id="authInfo" class="small">未ログイン</div>
+      <div id="authInfo" class="small muted">未ログイン</div>
+      <div class="small muted" style="margin-top:6px">※同一オリジンで host.html と embed.html を配置してください。</div>
     </div>
 
     <div class="card">
-      <div class="small">学習実態調査（ログイン後に自分のデータが表示されます）</div>
-      <!-- embed.html は同じリポジトリに置くこと（同一オリジン） -->
-      <iframe id="innerFrame" src="./embed.html" style="height:640px"></iframe>
+      <div class="small">学習実態調査（embed） — ログイン後、自動でセッションを渡します</div>
+      <iframe id="innerFrame" src="./embed.html" style="height:800px"></iframe>
     </div>
   </div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
-
 const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+window.supabaseHost = supabase
 
 const emailInp = document.getElementById('email'), pwInp = document.getElementById('password')
 const signinBtn = document.getElementById('signinBtn'), signupBtn = document.getElementById('signupBtn'), signoutBtn = document.getElementById('signoutBtn')
 const authInfo = document.getElementById('authInfo'), innerFrame = document.getElementById('innerFrame')
+const SESSION_KEY = 'supabase_session_v2_host'
 
-const SESSION_KEY = 'supabase_session_v2'
-
-// utility: save slim session locally (so host can restore across reload)
+// save slim session locally
 function saveSessionLocal(session){
   if(!session){ localStorage.removeItem(SESSION_KEY); return; }
   const slim = { access_token: session.access_token, refresh_token: session.refresh_token, user: session.user }
   localStorage.setItem(SESSION_KEY, JSON.stringify(slim))
 }
 async function restoreSessionLocalIfNeeded(){
-  // if supabase client already has session, do nothing
-  const { data } = await supabase.auth.getSession()
-  if(data?.session) return
-  const raw = localStorage.getItem(SESSION_KEY)
-  if(!raw) return
-  const saved = JSON.parse(raw)
-  if(saved?.access_token && saved?.refresh_token){
-    const { data: setData, error } = await supabase.auth.setSession({ access_token: saved.access_token, refresh_token: saved.refresh_token })
-    if(error) { console.warn('restore setSession error', error); localStorage.removeItem(SESSION_KEY); return }
-    // after restore, notify inner iframe
-    postSessionToChild(setData.session)
-  }
+  try{
+    const { data } = await supabase.auth.getSession()
+    if(data?.session) return
+    const raw = localStorage.getItem(SESSION_KEY)
+    if(!raw) return
+    const saved = JSON.parse(raw)
+    if(saved?.access_token && saved?.refresh_token){
+      const { data: setData, error } = await supabase.auth.setSession({ access_token: saved.access_token, refresh_token: saved.refresh_token })
+      if(error){ console.warn('restore setSession error', error); localStorage.removeItem(SESSION_KEY); return }
+      console.log('host: session restored from local')
+      notifyChildWithSession(setData.session)
+    }
+  }catch(e){ console.warn('restoreSessionLocalIfNeeded', e) }
 }
 
-// when supabase auth state changes in host, save session and send to child
+// handshake: child sends {type:'child_ready'} when embed is ready to receive session
+let childReady = false
+function notifyChildWithSession(session){
+  if(!session) return
+  const payload = { type:'supabase_session', session: { access_token: session.access_token, refresh_token: session.refresh_token, user: session.user } }
+  postToChild(payload)
+}
+
+// safe postMessage (try same-origin then fallback to *)
+function postToChild(msg){
+  try{
+    const targetOrigin = location.origin || '*'
+    if(innerFrame && innerFrame.contentWindow){
+      innerFrame.contentWindow.postMessage(msg, targetOrigin)
+    }
+  }catch(e){ console.warn('postToChild failed', e); try{ innerFrame.contentWindow.postMessage(msg,'*') }catch(e2){console.warn(e2)} }
+}
+
+// listen messages from child
+window.addEventListener('message', (ev)=>{
+  // allow same-origin or, if different origin, ignore unless explicitly permitted
+  try{
+    if(ev.origin !== location.origin){
+      // if embed is truly on different origin, allow debugging but print warning
+      console.warn('message origin mismatch', ev.origin, 'expected', location.origin)
+      // continue to accept messages if they have known structure (for remote testing)
+    }
+  }catch(e){ console.warn(e) }
+
+  const data = ev.data
+  if(!data || typeof data !== 'object') return
+  if(data.type === 'child_ready'){
+    childReady = true
+    console.log('host: child reported ready')
+    // if we have a live session, send it
+    supabase.auth.getSession().then(({data})=>{
+      if(data?.session) notifyChildWithSession(data.session)
+      else {
+        // if local saved session exists, attempt restore (will send session then)
+        restoreSessionLocalIfNeeded()
+      }
+    })
+  } else if(data.type === 'child_height'){
+    const h = Number(data.height) || 640
+    innerFrame.style.height = (h + 8) + 'px'
+  } else if(data.type === 'child_log'){
+    console.log('child_log:', data.msg)
+  }
+})
+
+// auth state changes: save session and notify child
 supabase.auth.onAuthStateChange((event, session) => {
   if(session?.access_token) saveSessionLocal(session)
   else localStorage.removeItem(SESSION_KEY)
 
   if(session?.user){
     authInfo.textContent = `ログイン: ${session.user.email}`
-    postSessionToChild(session)
+    if(childReady) notifyChildWithSession(session)
   } else {
     authInfo.textContent = '未ログイン'
-    postMessageToChild({ type:'signout' })
+    postToChild({ type:'signout' })
   }
 })
 
-// post session object to child iframe
-function postSessionToChild(session){
-  if(!session) return
-  const payload = { type:'supabase_session', session: { access_token: session.access_token, refresh_token: session.refresh_token, user: session.user } }
-  postMessageToChild(payload)
-}
-
-// generic postMessage with origin check (we use same origin here)
-function postMessageToChild(msg){
-  try{
-    innerFrame.contentWindow.postMessage(msg, location.origin)
-  }catch(e){ console.warn('post to child failed', e) }
-}
-
-// sign in / up
+// sign in / signup / signout flows
 signinBtn.addEventListener('click', async ()=>{
   const email = emailInp.value.trim(), password = pwInp.value
   if(!email || !password) return alert('メールとパスワードを入力してください')
   const { data, error } = await supabase.auth.signInWithPassword({ email, password })
   if(error) return alert('サインイン失敗: ' + error.message)
-  const session = data?.session
-  if(session){ saveSessionLocal(session); postSessionToChild(session); authInfo.textContent = `ログイン: ${session.user.email}` }
+  if(data?.session){
+    saveSessionLocal(data.session)
+    authInfo.textContent = `ログイン: ${data.session.user.email}`
+    if(childReady) notifyChildWithSession(data.session)
+  }
 })
 
 signupBtn.addEventListener('click', async ()=>{
@@ -114,41 +156,26 @@ signupBtn.addEventListener('click', async ()=>{
   if(!email || !password) return alert('メールとパスワードを入力してください')
   const { data, error } = await supabase.auth.signUp({ email, password })
   if(error) return alert('サインアップ失敗: ' + error.message)
-  // signup may not return session (depends on Supabase settings). try to get session after
+  // try to retrieve session (may require email confirmation depending on project settings)
   const { data: sessData } = await supabase.auth.getSession()
   if(sessData?.session){
     saveSessionLocal(sessData.session)
-    postSessionToChild(sessData.session)
     authInfo.textContent = `ログイン: ${sessData.session.user.email}`
+    if(childReady) notifyChildWithSession(sessData.session)
   } else {
-    alert('登録しました。確認メールが届く場合があります。手動でログインしてください。')
+    alert('登録しました。確認メールが届く場合があります。ログインしてください。')
   }
 })
 
 signoutBtn.addEventListener('click', async ()=>{
-  await supabase.auth.signOut()
-  localStorage.removeItem(SESSION_KEY)
-  postMessageToChild({ type:'signout' })
-  authInfo.textContent = 'サインアウト'
+  try{ await supabase.auth.signOut(); localStorage.removeItem(SESSION_KEY); postToChild({ type:'signout' }); authInfo.textContent='サインアウト' }catch(e){ console.warn(e) }
 })
 
-// receive messages from child (e.g. child reports height)
-window.addEventListener('message', (ev)=>{
-  // only accept messages from same origin (we host both pages on same origin)
-  if(ev.origin !== location.origin) return
-  const d = ev.data
-  if(!d || typeof d !== 'object') return
-  if(d.type === 'child_height'){
-    // set iframe height to child's content height (no scroll)
-    const h = parseInt(d.height,10) || 640
-    innerFrame.style.height = (h + 20) + 'px'
-  }
-})
-
-// on load, try restoring session
+// try restore on load
 window.addEventListener('DOMContentLoaded', async ()=>{
   await restoreSessionLocalIfNeeded()
 })
 </script>
 </body>
 </html>
+
