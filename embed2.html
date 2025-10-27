@@ -589,48 +589,127 @@ async function fetchRoleForUser(userId){
    Weekly chart
    -------------------------- */
 function renderWeeklyChart(){
-  const chartDiv = weeklyChartTarget
-  chartDiv.innerHTML = ''
-  const days = lastNDates(dateInput.value || todayY(), 7)
+  const chartDiv = document.getElementById('weeklyChart');
+  if(!chartDiv) return;
+  if(!chartDiv.style.height || chartDiv.style.height === '') chartDiv.style.height = '160px';
+  chartDiv.innerHTML = '';
+
+  const days = lastNDates(dateInput.value || todayY(), 7);
   const totals = days.map(d => {
-    if(!state.hourSegments[d]) return 0
-    return state.hourSegments[d].reduce((a,h)=>a+h.reduce((aa,s)=>aa + (s.filledMs||0),0),0) / 3600000
-  })
-  const maxTotal = Math.max(...totals, 1)
-  const w = chartDiv.clientWidth || 600
-  const h = chartDiv.clientHeight || 160
-  const svgNS = "http://www.w3.org/2000/svg"
-  const svg = document.createElementNS(svgNS, 'svg')
-  svg.setAttribute('width', w); svg.setAttribute('height', h); svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+    if(!state.hourSegments[d]) return 0;
+    return state.hourSegments[d].reduce((a,h)=>a+h.reduce((aa,s)=>aa + (s.filledMs||0),0),0) / 3600000;
+  });
+
+  const containerW = chartDiv.clientWidth;
+  const containerH = chartDiv.clientHeight || 160;
+  if(containerW === 0){ requestAnimationFrame(()=>{ renderWeeklyChart(); }); return; }
+
+  const margin = { top: 20, right: 12, bottom: 28, left: 12 };
+  const w = containerW;
+  const h = containerH;
+  const innerW = Math.max(10, w - margin.left - margin.right);
+  const innerH = Math.max(10, h - margin.top - margin.bottom);
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS,'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  svg.style.display = 'block';
+  svg.innerHTML = '';
 
   for(let i=0;i<=4;i++){
-    const ly = 20 + i * ((h-40)/4)
-    const line = document.createElementNS(svgNS,'line')
-    line.setAttribute('x1',0); line.setAttribute('x2',w); line.setAttribute('y1',ly); line.setAttribute('y2',ly)
-    line.setAttribute('stroke','rgba(15,23,36,0.04)'); line.setAttribute('stroke-width','1')
-    svg.appendChild(line)
+    const ly = margin.top + i * (innerH / 4);
+    const line = document.createElementNS(svgNS,'line');
+    line.setAttribute('x1', margin.left);
+    line.setAttribute('x2', margin.left + innerW);
+    line.setAttribute('y1', ly);
+    line.setAttribute('y2', ly);
+    line.setAttribute('stroke', 'rgba(15,23,36,0.04)');
+    line.setAttribute('stroke-width', '1');
+    svg.appendChild(line);
   }
 
+  const n = totals.length;
+  const stepX = n > 1 ? innerW / (n-1) : innerW;
+  const maxTotal = Math.max(...totals, 1);
   const points = totals.map((t,i)=>{
-    const x = i * (w/(totals.length-1))
-    const y = h - (t / maxTotal) * (h-40) - 20
-    return [x,y]
-  })
+    const x = Math.round(margin.left + i * stepX);
+    const y = Math.round(margin.top + (1 - (t / maxTotal)) * innerH);
+    return [x,y];
+  });
 
-  const path = document.createElementNS(svgNS,'path')
-  path.setAttribute('d', points.map((p,i)=> i===0?`M${p[0]},${p[1]}`:`L${p[0]},${p[1]}`).join(' '))
-  path.setAttribute('fill','none'); path.setAttribute('stroke','#4461f2'); path.setAttribute('stroke-width','3'); path.setAttribute('stroke-linejoin','round'); path.setAttribute('stroke-linecap','round')
-  svg.appendChild(path)
+  const path = document.createElementNS(svgNS,'path');
+  const d = points.map((p,i)=> i===0?`M${p[0]} ${p[1]}`:`L${p[0]} ${p[1]}`).join(' ');
+  path.setAttribute('d', d);
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', '#4461f2');
+  path.setAttribute('stroke-width', '3');
+  path.setAttribute('stroke-linejoin', 'round');
+  path.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(path);
 
-  points.forEach(p=>{
-    const c = document.createElementNS(svgNS,'circle'); c.setAttribute('cx',p[0]); c.setAttribute('cy',p[1]); c.setAttribute('r',4); c.setAttribute('fill','#4461f2'); svg.appendChild(c)
-  })
+  try{
+    const area = document.createElementNS(svgNS,'path');
+    const areaD = `${d} L ${margin.left + innerW} ${margin.top + innerH} L ${margin.left} ${margin.top + innerH} Z`;
+    area.setAttribute('d', areaD);
+    area.setAttribute('fill', 'rgba(68,97,242,0.06)');
+    svg.insertBefore(area, path);
+  }catch(e){}
+
   points.forEach((p,i)=>{
-    const t = document.createElementNS(svgNS,'text'); t.setAttribute('x', p[0]); t.setAttribute('y', h-4); t.setAttribute('text-anchor','middle'); t.setAttribute('font-size','12'); t.setAttribute('fill','#0f1724'); t.textContent = days[i].slice(5); svg.appendChild(t)
-    const l = document.createElementNS(svgNS,'text'); l.setAttribute('x', p[0]); l.setAttribute('y', p[1]-8); l.setAttribute('text-anchor','middle'); l.setAttribute('font-size','11'); l.setAttribute('fill','#0f1724'); l.textContent = totals[i].toFixed(1) + 'h'; svg.appendChild(l)
-  })
-  chartDiv.appendChild(svg)
+    const circ = document.createElementNS(svgNS,'circle');
+    circ.setAttribute('cx', p[0]); circ.setAttribute('cy', p[1]); circ.setAttribute('r', 4); circ.setAttribute('fill', '#4461f2');
+    svg.appendChild(circ);
+
+    const tx = document.createElementNS(svgNS,'text');
+    tx.setAttribute('x', p[0]); tx.setAttribute('y', h - 6);
+    tx.setAttribute('text-anchor','middle'); tx.setAttribute('font-size','11'); tx.setAttribute('fill','#0f1724');
+    tx.textContent = days[i].slice(5);
+    svg.appendChild(tx);
+
+    const vl = document.createElementNS(svgNS,'text');
+    vl.setAttribute('x', p[0]); vl.setAttribute('y', p[1] - 8);
+    vl.setAttribute('text-anchor','middle'); vl.setAttribute('font-size','11'); vl.setAttribute('fill','#0f1724');
+    vl.textContent = totals[i].toFixed(1) + 'h';
+    svg.appendChild(vl);
+  });
+
+  chartDiv.appendChild(svg);
+
+  setTimeout(()=>{ reportHeightToParent() }, 60);
 }
+
+/* ResizeObserver と高さ通知（1回だけ追加すれば良い） */
+let _chartResizeObserver = null;
+let _chartResizeDebounce = null;
+function observeWeeklyChartResize(){
+  const chartDiv = document.getElementById('weeklyChart');
+  if(!chartDiv) return;
+  if(_chartResizeObserver) _chartResizeObserver.disconnect();
+  _chartResizeObserver = new ResizeObserver(entries=>{
+    if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce);
+    _chartResizeDebounce = setTimeout(()=>{ renderWeeklyChart(); }, 120);
+  });
+  _chartResizeObserver.observe(chartDiv);
+  window.addEventListener('resize', ()=>{ if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce); _chartResizeDebounce = setTimeout(()=>renderWeeklyChart(), 120) });
+}
+if(document.readyState === 'loading'){
+  document.addEventListener('DOMContentLoaded', ()=>{ observeWeeklyChartResize(); renderWeeklyChart(); });
+} else { observeWeeklyChartResize(); renderWeeklyChart(); }
+
+function reportHeightToParent(){
+  try{
+    const body = document.body;
+    const html = document.documentElement;
+    const height = Math.max(body.scrollHeight, body.offsetHeight, html.clientHeight, html.scrollHeight, html.offsetHeight);
+    if(window.parent && window.parent !== window){
+      window.parent.postMessage({ type: 'child_height', height: height }, location.origin);
+    }
+  }catch(e){ console.warn(e) }
+}
+new MutationObserver(()=>{ setTimeout(reportHeightToParent, 80) }).observe(document.body, { childList:true, subtree:true, attributes:true });
 
 /* --------------------------
    Init
