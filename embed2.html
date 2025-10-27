@@ -1,6 +1,109 @@
 <!doctype html>
 <html lang="ja">
-<head>
+<head><!-- --- EMBED: session受信 + 高さ通知 + overflow:hidden --- -->
+<style>
+  /* embed 側ではスクロールを出さない */
+  html, body { height:100%; margin:0; padding:0; overflow:hidden; }
+  /* wrapper (UI) が長くなっても親側で高さを合わせるので内部スクロールは不要 */
+  .wrap{ overflow:visible; }
+</style>
+
+<script type="module">
+/* supabase client が既に window.supabase にあることを前提。
+   もしない場合は最上部で createClient するコードを追加してください。 */
+
+const TARGET_ORIGIN = location.origin || '*'
+
+// utility: send message to parent
+function postToParent(msg){
+  try{
+    window.parent.postMessage(msg, TARGET_ORIGIN)
+  }catch(e){
+    try{ window.parent.postMessage(msg, '*') }catch(e2){ console.warn('postToParent failed', e2) }
+  }
+}
+
+// report ready to host so it can send session
+function reportReady(){
+  postToParent({ type: 'child_ready', url: location.href })
+  console.log('embed: child_ready sent')
+}
+
+// expose loadRemoteFor to global if not already (the function must exist in your main embed logic)
+if(typeof window.loadRemoteFor !== 'function'){
+  // stub — if your embed has a loader, replace this
+  window.loadRemoteFor = async function(uid){
+    console.log('loadRemoteFor not implemented - uid:', uid)
+    // If your main script defines a different loader, ignore this stub.
+  }
+}
+
+// receive messages from parent
+window.addEventListener('message', async (ev) => {
+  try{
+    // accept same-origin messages; if origin differs, still accept if structure is ok (but warn)
+    if(ev.origin !== location.origin){
+      console.warn('embed: message origin mismatch', ev.origin, 'expected', location.origin)
+      // continue (for cross-origin testing); in production prefer same-origin
+    }
+  }catch(e){ console.warn(e) }
+
+  const msg = ev.data
+  if(!msg || typeof msg !== 'object') return
+
+  if(msg.type === 'supabase_session' && msg.session){
+    console.log('embed: received session from host')
+    try{
+      if(window.supabase && typeof window.supabase.auth?.setSession === 'function'){
+        await window.supabase.auth.setSession({ access_token: msg.session.access_token, refresh_token: msg.session.refresh_token })
+        console.log('embed: supabase session set')
+        // now load user data
+        const uid = msg.session.user?.id
+        if(uid && typeof window.loadRemoteFor === 'function'){
+          try{ await window.loadRemoteFor(uid); console.log('embed: loaded remote data for', uid) }catch(e){ console.warn('embed loadRemoteFor error', e) }
+        }
+      } else {
+        console.warn('embed: supabase client or setSession not available')
+      }
+    }catch(e){ console.warn('embed setSession error', e) }
+  } else if(msg.type === 'signout'){
+    if(window.supabase && typeof window.supabase.auth?.signOut === 'function'){
+      try{ await window.supabase.auth.signOut(); console.log('embed: signed out'); }catch(e){ console.warn(e) }
+    }
+  }
+})
+
+// HEIGHT reporting: robust notification of content height
+function reportHeightToParent(){
+  try{
+    const body = document.body, html = document.documentElement
+    const height = Math.max(body.scrollHeight, body.offsetHeight, html.clientHeight, html.scrollHeight, html.offsetHeight)
+    postToParent({ type:'child_height', height })
+  }catch(e){ console.warn('reportHeightToParent err', e) }
+}
+
+// observe size/content changes
+const ro = new ResizeObserver(entries => {
+  reportHeightToParent()
+})
+ro.observe(document.documentElement)
+ro.observe(document.body)
+
+const mo = new MutationObserver(() => { setTimeout(reportHeightToParent, 40) })
+mo.observe(document.body, { childList:true, subtree:true, attributes:true })
+
+// initial ready + height report after load
+window.addEventListener('load', ()=>{ reportReady(); setTimeout(reportHeightToParent, 120) })
+
+// also immediately announce ready in case parent loaded after
+setTimeout(reportReady, 300)
+
+// allow manual debug post
+window.reportHeightToParent = reportHeightToParent
+window.postLogToParent = msg => postToParent({ type:'child_log', msg })
+
+</script>
+
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>学習実態調査（認証付き・修正版）</title>
