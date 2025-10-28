@@ -6,146 +6,33 @@
   html, body { height:100%; margin:0; padding:0; overflow:hidden; }
   /* wrapper (UI) が長くなっても親側で高さを合わせるので内部スクロールは不要 */
   .wrap{ overflow:visible; }
-</style>
 
-<script type="module">
-/* supabase client が既に window.supabase にあることを前提。
-   もしない場合は最上部で createClient するコードを追加してください。 */
-
-const TARGET_ORIGIN = location.origin || '*'
-
-// utility: send message to parent
-function postToParent(msg){
-  try{
-    window.parent.postMessage(msg, TARGET_ORIGIN)
-  }catch(e){
-    try{ window.parent.postMessage(msg, '*') }catch(e2){ console.warn('postToParent failed', e2) }
+  /* --- 追加スタイル: Fit-to-viewport 用 --- */
+  /* wrap を transform でスケールして中央寄せするための準備 */
+  .fit-viewport-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center; /* 横中央 */
+    align-items: flex-start; /* 上寄せして自然な top origin に合わせる */
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 18px 0; /* 元々 body にあったマージン相当 */
   }
-}
-
-// report ready to host so it can send session
-function reportReady(){
-  postToParent({ type: 'child_ready', url: location.href })
-  console.log('embed: child_ready sent')
-}
-
-// expose loadRemoteFor to global if not already (the function must exist in your main embed logic)
-if(typeof window.loadRemoteFor !== 'function'){
-  // stub — if your embed has a loader, replace this
-  window.loadRemoteFor = async function(uid){
-    console.log('loadRemoteFor not implemented - uid:', uid)
-    // If your main script defines a different loader, ignore this stub.
+  .wrap {
+    transform-origin: top center;
+    transition: transform 160ms linear;
+    will-change: transform;
+    /* 保守性のため width 制約は残す（元の最大幅） */
+    max-width: 1100px;
   }
-}
 
-// receive messages from parent
-window.addEventListener('message', async (ev) => {
-  try{
-    // accept same-origin messages; if origin differs, still accept if structure is ok (but warn)
-    if(ev.origin !== location.origin){
-      console.warn('embed: message origin mismatch', ev.origin, 'expected', location.origin)
-      // continue (for cross-origin testing); in production prefer same-origin
-    }
-  }catch(e){ console.warn(e) }
-
-  const msg = ev.data
-  if(!msg || typeof msg !== 'object') return
-
-  if(msg.type === 'supabase_session' && msg.session){
-    console.log('embed: received session from host')
-    try{
-      if(window.supabase && typeof window.supabase.auth?.setSession === 'function'){
-        await window.supabase.auth.setSession({ access_token: msg.session.access_token, refresh_token: msg.session.refresh_token })
-        console.log('embed: supabase session set')
-        // now load user data
-        const uid = msg.session.user?.id
-        if(uid && typeof window.loadRemoteFor === 'function'){
-          try{ await window.loadRemoteFor(uid); console.log('embed: loaded remote data for', uid) }catch(e){ console.warn('embed loadRemoteFor error', e) }
-        }
-      } else {
-        console.warn('embed: supabase client or setSession not available')
-      }
-    }catch(e){ console.warn('embed setSession error', e) }
-  } else if(msg.type === 'signout'){
-    if(window.supabase && typeof window.supabase.auth?.signOut === 'function'){
-      try{ await window.supabase.auth.signOut(); console.log('embed: signed out'); }catch(e){ console.warn(e) }
-    }
-  }
-})
-
-// HEIGHT reporting: robust notification of content height
-function reportHeightToParent(){
-  try{
-    const body = document.body, html = document.documentElement
-    const height = Math.max(body.scrollHeight, body.offsetHeight, html.clientHeight, html.scrollHeight, html.offsetHeight)
-    postToParent({ type:'child_height', height })
-  }catch(e){ console.warn('reportHeightToParent err', e) }
-}
-
-// observe size/content changes
-const ro = new ResizeObserver(entries => {
-  reportHeightToParent()
-})
-ro.observe(document.documentElement)
-ro.observe(document.body)
-
-const mo = new MutationObserver(() => { setTimeout(reportHeightToParent, 40) })
-mo.observe(document.body, { childList:true, subtree:true, attributes:true })
-
-// initial ready + height report after load
-window.addEventListener('load', ()=>{ reportReady(); setTimeout(reportHeightToParent, 120) })
-
-// also immediately announce ready in case parent loaded after
-setTimeout(reportReady, 300)
-
-// allow manual debug post
-window.reportHeightToParent = reportHeightToParent
-window.postLogToParent = msg => postToParent({ type:'child_log', msg })
-
-</script>
-
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>学習実態調査（認証付き・修正版）</title>
-<style>
-:root{
-  --bg:#f6f8fb; --card:#fff; --muted:#6b7280; --accent:#4461f2; --radius:12px;
-}
-*{box-sizing:border-box}
-body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);margin:18px;color:#0f1724}
-.wrap{max-width:1100px;margin:0 auto}
-.card{background:var(--card);border-radius:var(--radius);padding:12px;box-shadow:0 10px 30px rgba(16,24,40,0.06)}
-.top{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px}
-.small{font-size:13px;color:var(--muted)}
-.palette{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.subject-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;color:#fff;font-weight:700;cursor:pointer;border:0}
-.grid-wrap{overflow:auto;margin-top:12px}
-.hours-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(72px,1fr);padding:12px}
-.hour-col{min-width:72px;padding:6px}
-.hour-header{font-size:12px;color:var(--muted);text-align:center;margin-bottom:6px}
-.hour-cell{height:72px;border-radius:10px;border:1px solid rgba(16,24,40,0.04);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#fff,#fbfbff)}
-.segments{display:flex;height:100%;width:100%}
-.segment{flex:1;position:relative}
-.fill{position:absolute;left:0;top:0;bottom:0;width:0;transition:width .2s linear}
-.overlay{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-weight:700;color:rgba(0,0,0,0.65);z-index:3}
-.cell-label{position:absolute;left:6px;top:6px;font-weight:700;color:rgba(0,0,0,0.75);z-index:4}
-.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center}
-.legend .item{display:flex;align-items:center;gap:8px}
-.legend input[type="color"]{border:0;padding:0;width:34px;height:28px;border-radius:6px}
-.btn{background:var(--accent);color:#fff;padding:8px 12px;border-radius:10px;border:0;cursor:pointer;font-weight:700}
-.btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(68,97,242,0.12)}
-.auth-card{min-width:260px;display:flex;flex-direction:column;gap:8px}
-.compact-day{background:#fff;border-radius:10px;padding:8px;border:1px solid rgba(0,0,0,0.04);margin-top:8px}
-.compact-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(48px,1fr);gap:6px;align-items:start}
-.compact-hour{min-width:48px}
-.compact-cell{height:44px;border-radius:8px;border:1px solid rgba(16,24,40,0.04);position:relative;overflow:hidden}
-.small-muted{font-size:12px;color:var(--muted)}
-.add-subject{display:flex;gap:8px;margin-top:8px;align-items:center}
-.graph-card{margin-top:10px}
-@media(max-width:900px){.hour-cell{height:56px}}
+  /* スクロールを生じさせないために、要素の最大高さを viewport に合わせる工夫（補助） */
+  .card, .hours-grid { box-sizing: border-box; }
 </style>
 </head>
 <body>
+<div class="fit-viewport-container">
 <div class="wrap">
   <h1>デジタル版学習実態調査</h1>
 
@@ -209,7 +96,10 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
     <div class="grid-wrap"><div id="hoursGrid" class="hours-grid"></div></div>
   </div>
 </div>
+</div>
 
+<!-- 既存スクリプトはそのまま（長いので省略せずに貼ってください） -->
+<!-- ここから元のスクリプト（Supabase など）を丸ごと貼る（質問文にあった内容をすべて） -->
 <script type="module">
 /* --------------------------
    Supabase setup
@@ -853,5 +743,75 @@ dateInput.addEventListener('change', ()=> renderAll())
 
 /* End of script */
 </script>
+
+<!-- ===== ここから追加: 自動フィット（viewport に収める）スクリプト ===== -->
+<script>
+(function(){
+  const wrap = document.querySelector('.wrap');
+  const container = document.querySelector('.fit-viewport-container');
+  if(!wrap || !container) return;
+
+  // デバウンスユーティリティ
+  let fitTimer = null;
+  function debounceFit(delay=80){
+    if(fitTimer) clearTimeout(fitTimer);
+    fitTimer = setTimeout(()=>{ fitToViewport(); fitTimer = null }, delay);
+  }
+
+  // 実際のフィット処理
+  function fitToViewport(){
+    // wrap の「自然サイズ」を取得（transform 前）
+    wrap.style.transform = 'none'; // 一旦リセットして正しいサイズ計測
+    wrap.style.marginLeft = '0px';
+
+    // viewport に対するパディング等の余裕（左右少し＆上下少し）
+    const H_PADDING = 36; // 左右合計
+    const V_PADDING = 36; // 上下合計
+
+    const availableW = Math.max(100, window.innerWidth - H_PADDING);
+    const availableH = Math.max(100, window.innerHeight - V_PADDING);
+
+    const rect = wrap.getBoundingClientRect();
+    const contentW = rect.width;
+    const contentH = rect.height;
+
+    // スケールは必要な場合のみ 1 未満に
+    const scaleX = availableW / contentW;
+    const scaleY = availableH / contentH;
+    const scale = Math.min(1, scaleX, scaleY);
+
+    wrap.style.transform = `scale(${scale})`;
+
+    // 横中央寄せ調整（transform 後の実サイズを考慮）
+    const renderedW = contentW * scale;
+    const offsetX = Math.max(0, (window.innerWidth - renderedW) / 2);
+    wrap.style.marginLeft = offsetX + 'px';
+
+    // 高さ情報を親に報告（埋め込みで必要）
+    if(typeof reportHeightToParent === 'function'){
+      setTimeout(reportHeightToParent, 40);
+    }
+  }
+
+  // リサイズ監視
+  window.addEventListener('resize', ()=> debounceFit(60));
+
+  // DOM 変更（内部が伸びる可能性）を監視
+  const mo = new MutationObserver(()=> debounceFit(80));
+  mo.observe(wrap, { subtree:true, childList:true, attributes:true, characterData:true });
+
+  // 初回実行（DOMContentLoaded 後）
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', ()=> setTimeout(fitToViewport, 60));
+  } else {
+    setTimeout(fitToViewport, 60);
+  }
+
+  // expose manual trigger for debug
+  window.fitAppToViewport = fitToViewport;
+})();
+</script>
+<!-- ===== 追加ここまで ===== -->
+
 </body>
 </html>
