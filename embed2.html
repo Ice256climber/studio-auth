@@ -7,25 +7,22 @@
   /* wrapper (UI) が長くなっても親側で高さを合わせるので内部スクロールは不要 */
   .wrap{ overflow:visible; }
 
-  /* ====== 追加: ビューポートに合わせて縮小して全体表示するためのラッパー ====== */
+  /* --- 追加: ビューポートに合わせて縮小表示するためのラッパー（デザインそのまま維持） --- */
   .fit-viewport-container{
     width:100%;
     height:100%;
     display:flex;
-    justify-content:center; /* 横中央寄せ */
-    align-items:flex-start;  /* 上寄せ（トップを基準にスケール） */
+    justify-content:center; /* 横中央寄せ（見た目を変えない） */
+    align-items:flex-start;  /* 上寄せして元の top レイアウトを維持 */
     overflow:hidden;
     box-sizing:border-box;
-    padding:18px 0; /* 元の body margin:18px と整合 */
+    padding:18px 0; /* 元の body margin と整合 */
   }
-
-  /* wrap を transform で縮小する */
-  .wrap{
+  /* .wrap 自体の既存スタイルは変更しない（max-width 等を維持） */
+  .fit-viewport-container > .wrap {
     transform-origin: top center;
     transition: transform 160ms linear;
     will-change: transform;
-    max-width:1100px; /* 元の値を維持 */
-    margin:0 auto;
   }
 </style>
 
@@ -140,7 +137,7 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
 .small{font-size:13px;color:var(--muted)}
 .palette{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .subject-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;color:#fff;font-weight:700;cursor:pointer;border:0}
-.grid-wrap{ /* overflow を hidden にして内部スクロールを抑制（全体表示を優先） */ overflow:hidden;margin-top:12px}
+.grid-wrap{overflow:auto;margin-top:12px}
 .hours-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(72px,1fr);padding:12px}
 .hour-col{min-width:72px;padding:6px}
 .hour-header{font-size:12px;color:var(--muted);text-align:center;margin-bottom:6px}
@@ -168,73 +165,73 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
 </head>
 <body>
 
-<!-- fit wrapper を追加（既存の .wrap を変更せずに内包） -->
+<!-- ここで既存の .wrap を内包し、デザインは一切変更せずにフィット処理だけ追加 -->
 <div class="fit-viewport-container">
-<div class="wrap">
-  <h1>デジタル版学習実態調査</h1>
+  <div class="wrap">
+    <h1>デジタル版学習実態調査</h1>
 
-  <div class="top">
-    <div class="card" style="min-width:480px">
-      <div style="display:flex;gap:12px;align-items:center">
-        <div><div class="small">日付</div><input type="date" id="dateInput"></div>
-        <div><div class="small">開始時刻</div><input type="time" id="startTimeInput"></div>
-        <div style="margin-left:8px"><div class="small">操作</div>
-          <div style="display:flex;gap:8px;margin-top:6px">
-            <button id="startBtn" class="btn">開始</button>
-            <button id="pauseBtn" class="btn ghost">一時停止</button>
-            <button id="resetBtn" class="btn ghost">リセット</button>
-            <button id="setNowBtn" class="btn ghost">今に</button>
+    <div class="top">
+      <div class="card" style="min-width:480px">
+        <div style="display:flex;gap:12px;align-items:center">
+          <div><div class="small">日付</div><input type="date" id="dateInput"></div>
+          <div><div class="small">開始時刻</div><input type="time" id="startTimeInput"></div>
+          <div style="margin-left:8px"><div class="small">操作</div>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <button id="startBtn" class="btn">開始</button>
+              <button id="pauseBtn" class="btn ghost">一時停止</button>
+              <button id="resetBtn" class="btn ghost">リセット</button>
+              <button id="setNowBtn" class="btn ghost">今に</button>
+            </div>
           </div>
         </div>
+        <div style="display:flex;gap:16px;margin-top:10px;align-items:center">
+          <div class="small">経過（セッション）<div id="elapsedLabel" style="font-weight:800">00:00:00</div></div>
+          <div class="small">今日合計<div id="todayTotalLabel" style="font-weight:800">0:00:00</div></div>
+        </div>
       </div>
-      <div style="display:flex;gap:16px;margin-top:10px;align-items:center">
-        <div class="small">経過（セッション）<div id="elapsedLabel" style="font-weight:800">00:00:00</div></div>
-        <div class="small">今日合計<div id="todayTotalLabel" style="font-weight:800">0:00:00</div></div>
+
+      <div style="flex:1"></div>
+
+      <div class="card auth-card">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-weight:700">アカウント</div>
+          <div id="authControls"></div>
+        </div>
+        <div id="authStatus" class="small-muted">状態: 未確認</div>
+        <div class="small-muted" style="margin-top:6px">※サインアップ時に役割（teacher / student）を指定</div>
+      </div>
+
+      <div class="card" style="min-width:360px">
+        <div class="small">教科パレット（選択してから開始）</div>
+        <div id="palette" class="palette"></div>
+        <div id="legend" class="legend"></div>
+
+        <div class="add-subject">
+          <input id="newSubjectName" placeholder="新しい教科名" style="padding:8px;border-radius:8px;border:1px solid #e5e7eb;flex:1" />
+          <input id="newSubjectColor" type="color" value="#7c3aed" />
+          <button id="addSubjectBtn" class="btn">追加</button>
+        </div>
+
+        <div class="small" style="margin-top:8px">直近1週間</div>
+        <div id="weeklyList" class="small" style="margin-top:6px"></div>
+        <div id="weeklyTotalBox" style="display:none;margin-top:8px" class="small"><strong>週合計:</strong> <span id="weeklyTotalLabel">0:00:00</span></div>
+
+        <div id="openedDays"></div>
+
+        <div class="card graph-card" style="margin-top:10px;padding:10px">
+          <div class="small">日別合計（折れ線）</div>
+          <div id="weeklyChart" style="width:100%;height:160px;margin-top:8px"></div>
+        </div>
       </div>
     </div>
 
-    <div style="flex:1"></div>
-
-    <div class="card auth-card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <div style="font-weight:700">アカウント</div>
-        <div id="authControls"></div>
-      </div>
-      <div id="authStatus" class="small-muted">状態: 未確認</div>
-      <div class="small-muted" style="margin-top:6px">※サインアップ時に役割（teacher / student）を指定</div>
-    </div>
-
-    <div class="card" style="min-width:360px">
-      <div class="small">教科パレット（選択してから開始）</div>
-      <div id="palette" class="palette"></div>
-      <div id="legend" class="legend"></div>
-
-      <div class="add-subject">
-        <input id="newSubjectName" placeholder="新しい教科名" style="padding:8px;border-radius:8px;border:1px solid #e5e7eb;flex:1" />
-        <input id="newSubjectColor" type="color" value="#7c3aed" />
-        <button id="addSubjectBtn" class="btn">追加</button>
-      </div>
-
-      <div class="small" style="margin-top:8px">直近1週間</div>
-      <div id="weeklyList" class="small" style="margin-top:6px"></div>
-      <div id="weeklyTotalBox" style="display:none;margin-top:8px" class="small"><strong>週合計:</strong> <span id="weeklyTotalLabel">0:00:00</span></div>
-
-      <div id="openedDays"></div>
-
-      <div class="card graph-card" style="margin-top:10px;padding:10px">
-        <div class="small">日別合計（折れ線）</div>
-        <div id="weeklyChart" style="width:100%;height:160px;margin-top:8px"></div>
-      </div>
+    <div class="card">
+      <div class="small">時間表示と塗り</div>
+      <div class="grid-wrap"><div id="hoursGrid" class="hours-grid"></div></div>
     </div>
   </div>
-
-  <div class="card">
-    <div class="small">時間表示と塗り</div>
-    <div class="grid-wrap"><div id="hoursGrid" class="hours-grid"></div></div>
-  </div>
 </div>
-</div>
-<!-- /fit wrapper -->
+<!-- /.fit-viewport-container -->
 
 <script type="module">
 /* --------------------------
@@ -880,12 +877,12 @@ dateInput.addEventListener('change', ()=> renderAll())
 /* End of script */
 </script>
 
-<!-- ====== 追加スクリプト: ビューポートに合わせて .wrap を自動スケールする ====== -->
+<!-- ====== 追加: 自動フィット用スクリプト（デザインは変更しない） ====== -->
 <script>
 (function(){
-  const wrap = document.querySelector('.wrap');
-  const container = document.querySelector('.fit-viewport-container');
-  if(!wrap || !container) return;
+  // .fit-viewport-container > .wrap を縮小してビューポートに収める（デザイン規則はそのまま）
+  const wrap = document.querySelector('.fit-viewport-container > .wrap');
+  if(!wrap) return;
 
   let fitTimer = null;
   function debounceFit(delay=80){
@@ -896,9 +893,9 @@ dateInput.addEventListener('change', ()=> renderAll())
   function fitToViewport(){
     // 一旦 transform をリセットして実サイズを測る
     wrap.style.transform = 'none';
-    wrap.style.marginLeft = '0px';
+    wrap.style.marginLeft = '';
 
-    // ウィンドウの利用可能サイズ（若干の余白を残す）
+    // 少し余裕を残す（左右上下の余白を確保）
     const H_PADDING = 36; // 左右合計
     const V_PADDING = 36; // 上下合計
 
@@ -916,21 +913,19 @@ dateInput.addEventListener('change', ()=> renderAll())
 
     wrap.style.transform = `scale(${scale})`;
 
-    // 横中央に見えるよう margin-left を調整
+    // 横中央に見えるよう margin-left を調整（見た目を中央に寄せる）
     const renderedW = contentW * scale;
     const offsetX = Math.max(0, (window.innerWidth - renderedW) / 2);
     wrap.style.marginLeft = offsetX + 'px';
 
-    // 親へ高さ通知（存在すれば）
+    // 親フレームへ高さを通知（存在すれば）
     if(typeof reportHeightToParent === 'function'){
       setTimeout(reportHeightToParent, 40);
     }
   }
 
-  // リサイズ監視
+  // ウィンドウリサイズ・DOM変化を監視して再フィット
   window.addEventListener('resize', ()=> debounceFit(60));
-
-  // .wrap 内の DOM 変化も監視して再フィット
   const mo = new MutationObserver(()=> debounceFit(80));
   mo.observe(wrap, { subtree:true, childList:true, attributes:true, characterData:true });
 
@@ -941,7 +936,7 @@ dateInput.addEventListener('change', ()=> renderAll())
     setTimeout(fitToViewport, 60);
   }
 
-  // コンソールなどから手動で呼べるように公開
+  // デバッグ用に手動トリガを公開
   window.fitAppToViewport = fitToViewport;
 })();
 </script>
@@ -949,4 +944,5 @@ dateInput.addEventListener('change', ()=> renderAll())
 
 </body>
 </html>
+
 
