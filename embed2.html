@@ -242,6 +242,118 @@ const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 window.supabase = supabase
+  // --- 即時セッション復元 & セッション維持 (追加) ---
+// 置く場所: createClient(...); window.supabase = supabase の直後に挿入してください。
+
+const _SESSION_KEY = 'supabase_session_v2'; // 既存と同じキーを参照
+
+// 1) ページ読み込み直後に localStorage の保存済みトークンで即時復元を試みる
+;(async function immediateRestore(){
+  try{
+    const raw = localStorage.getItem(_SESSION_KEY);
+    if(!raw) { console.log('immediateRestore: no saved session'); return; }
+    const saved = JSON.parse(raw);
+    if(saved?.access_token && saved?.refresh_token){
+      console.log('immediateRestore: trying setSession from localStorage');
+      const { data, error } = await supabase.auth.setSession({
+        access_token: saved.access_token,
+        refresh_token: saved.refresh_token
+      });
+      if(error){
+        console.warn('immediateRestore: setSession error (clearing saved):', error);
+        // もし無効なら保存をクリアしておく
+        try{ localStorage.removeItem(_SESSION_KEY); }catch(e){}
+      } else {
+        console.log('immediateRestore: session restored from localStorage', data?.session?.user?.email || data?.session?.user?.id || '');
+      }
+    }
+  }catch(e){
+    console.warn('immediateRestore err', e);
+  }
+})();
+
+// 2) 定期的にセッションをチェックして必要なら refresh_token で再セット（10分毎）
+const _KEEPALIVE_INTERVAL_MS = 10 * 60 * 1000;
+setInterval(async ()=>{
+  try{
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if(session){
+      // session が存在すれば何もしない（Supabase SDK が自動更新する場合もある）
+      // ただし最新セッションを local に保存しておく
+      try{
+        localStorage.setItem(_SESSION_KEY, JSON.stringify({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          user: session.user
+        }));
+      }catch(e){ /* ignore */ }
+      return;
+    }
+    // session が null の場合、ローカル保存を試して復元
+    const raw = localStorage.getItem(_SESSION_KEY);
+    if(raw){
+      const saved = JSON.parse(raw);
+      if(saved?.access_token && saved?.refresh_token){
+        console.log('keepalive: restoring session using saved tokens');
+        const { data, error } = await supabase.auth.setSession({
+          access_token: saved.access_token,
+          refresh_token: saved.refresh_token
+        });
+        if(error){
+          console.warn('keepalive: setSession error', error);
+          // 無効なら保存を削除
+          try{ localStorage.removeItem(_SESSION_KEY); }catch(e){}
+        } else {
+          console.log('keepalive: session restored');
+        }
+      }
+    }
+  }catch(e){
+    console.warn('keepalive err', e);
+  }
+}, _KEEPALIVE_INTERVAL_MS);
+
+// 3) ページを閉じる時に現在のセッションを確実に保存する（fallback）
+window.addEventListener('beforeunload', async ()=>{
+  try{
+    const { data } = await supabase.auth.getSession();
+    const session = data?.session;
+    if(session){
+      try{
+        localStorage.setItem(_SESSION_KEY, JSON.stringify({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
+          user: session.user
+        }));
+      }catch(e){ console.warn('beforeunload save err', e); }
+    }
+  }catch(e){ /* ignore */ }
+});
+
+// 4) parent から送られてくる supabase_session を受け取る既存ハンドラは有効ですが
+//    念のためここでもメッセージで即復元できるようにしておきます。
+window.addEventListener('message', async (ev) => {
+  try{
+    const m = ev.data || {};
+    if(m && m.type === 'supabase_session' && m.session){
+      try{
+        await supabase.auth.setSession({
+          access_token: m.session.access_token,
+          refresh_token: m.session.refresh_token
+        });
+        // 保存しておく
+        localStorage.setItem(_SESSION_KEY, JSON.stringify({
+          access_token: m.session.access_token,
+          refresh_token: m.session.refresh_token,
+          user: m.session.user || null
+        }));
+        console.log('supabase_session received from parent and set');
+      }catch(e){ console.warn('parent session set err', e); }
+    }
+  }catch(e){}
+});
+
 
 /* --------------------------
    Constants & state
