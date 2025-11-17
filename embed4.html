@@ -16,55 +16,30 @@ const TARGET_ORIGIN = location.origin || '*'
 
 // utility: send message to parent
 function postToParent(msg){
-  try{
-    window.parent.postMessage(msg, TARGET_ORIGIN)
-  }catch(e){
-    try{ window.parent.postMessage(msg, '*') }catch(e2){ console.warn('postToParent failed', e2) }
-  }
+  try{ window.parent.postMessage(msg, TARGET_ORIGIN) }catch(e){ try{ window.parent.postMessage(msg, '*') }catch(e2){ console.warn('postToParent failed', e2) } }
 }
 
-// report ready to host so it can send session
-function reportReady(){
-  postToParent({ type: 'child_ready', url: location.href })
-  console.log('embed: child_ready sent')
-}
+function reportReady(){ postToParent({ type: 'child_ready', url: location.href }); console.log('embed: child_ready sent') }
 
-// expose loadRemoteFor to global if not already (the function must exist in your main embed logic)
 if(typeof window.loadRemoteFor !== 'function'){
-  // stub — if your embed has a loader, replace this
-  window.loadRemoteFor = async function(uid){
-    console.log('loadRemoteFor not implemented - uid:', uid)
-    // If your main script defines a different loader, ignore this stub.
-  }
+  window.loadRemoteFor = async function(uid){ console.log('loadRemoteFor not implemented - uid:', uid) }
 }
 
-// receive messages from parent
 window.addEventListener('message', async (ev) => {
-  try{
-    // accept same-origin messages; if origin differs, still accept if structure is ok (but warn)
-    if(ev.origin !== location.origin){
-      console.warn('embed: message origin mismatch', ev.origin, 'expected', location.origin)
-      // continue (for cross-origin testing); in production prefer same-origin
-    }
-  }catch(e){ console.warn(e) }
-
+  try{ if(ev.origin !== location.origin){ console.warn('embed: message origin mismatch', ev.origin, 'expected', location.origin) } }catch(e){ console.warn(e) }
   const msg = ev.data
   if(!msg || typeof msg !== 'object') return
-
   if(msg.type === 'supabase_session' && msg.session){
     console.log('embed: received session from host')
     try{
       if(window.supabase && typeof window.supabase.auth?.setSession === 'function'){
         await window.supabase.auth.setSession({ access_token: msg.session.access_token, refresh_token: msg.session.refresh_token })
         console.log('embed: supabase session set')
-        // now load user data
         const uid = msg.session.user?.id
         if(uid && typeof window.loadRemoteFor === 'function'){
           try{ await window.loadRemoteFor(uid); console.log('embed: loaded remote data for', uid) }catch(e){ console.warn('embed loadRemoteFor error', e) }
         }
-      } else {
-        console.warn('embed: supabase client or setSession not available')
-      }
+      } else { console.warn('embed: supabase client or setSession not available') }
     }catch(e){ console.warn('embed setSession error', e) }
   } else if(msg.type === 'signout'){
     if(window.supabase && typeof window.supabase.auth?.signOut === 'function'){
@@ -73,7 +48,7 @@ window.addEventListener('message', async (ev) => {
   }
 })
 
-// HEIGHT reporting: robust notification of content height
+// HEIGHT reporting
 function reportHeightToParent(){
   try{
     const body = document.body, html = document.documentElement
@@ -82,23 +57,15 @@ function reportHeightToParent(){
   }catch(e){ console.warn('reportHeightToParent err', e) }
 }
 
-// observe size/content changes
-const ro = new ResizeObserver(entries => {
-  reportHeightToParent()
-})
+const ro = new ResizeObserver(entries => { reportHeightToParent() })
 ro.observe(document.documentElement)
 ro.observe(document.body)
 
 const mo = new MutationObserver(() => { setTimeout(reportHeightToParent, 40) })
 mo.observe(document.body, { childList:true, subtree:true, attributes:true })
 
-// initial ready + height report after load
 window.addEventListener('load', ()=>{ reportReady(); setTimeout(reportHeightToParent, 120) })
-
-// also immediately announce ready in case parent loaded after
 setTimeout(reportReady, 300)
-
-// allow manual debug post
 window.reportHeightToParent = reportHeightToParent
 window.postLogToParent = msg => postToParent({ type:'child_log', msg })
 
@@ -108,9 +75,7 @@ window.postLogToParent = msg => postToParent({ type:'child_log', msg })
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>学習実態調査（認証付き・修正版）</title>
 <style>
-:root{
-  --bg:#f6f8fb; --card:#fff; --muted:#6b7280; --accent:#4461f2; --radius:12px;
-}
+:root{ --bg:#f6f8fb; --card:#fff; --muted:#6b7280; --accent:#4461f2; --radius:12px; }
 *{box-sizing:border-box}
 body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);margin:18px;color:#0f1724}
 .wrap{max-width:1100px;margin:0 auto}
@@ -142,6 +107,8 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
 .small-muted{font-size:12px;color:var(--muted)}
 .add-subject{display:flex;gap:8px;margin-top:8px;align-items:center}
 .graph-card{margin-top:10px}
+.overlay-list{position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(0,0,0,0.36);display:flex;align-items:center;justify-content:center}
+.overlay-card{background:white;padding:12px;border-radius:12px;max-width:760px;width:100%;max-height:80vh;overflow:auto}
 @media(max-width:900px){.hour-cell{height:56px}}
 </style>
 </head>
@@ -210,13 +177,21 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
   </div>
 </div>
 
+<!-- 学生選択オーバーレイ（先生用） -->
+<div id="studentOverlay" style="display:none" class="overlay-list">
+  <div class="overlay-card card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px"><strong>生徒一覧</strong><button id="closeStudentOverlay" class="btn ghost">閉じる</button></div>
+    <div id="studentListArea">読み込み中…</div>
+  </div>
+</div>
+
 <script type="module">
 /* --------------------------
    Supabase setup
    -------------------------- */
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 window.supabase = supabase
 
@@ -250,88 +225,21 @@ const weeklyList = document.getElementById('weeklyList'), weeklyTotalBox = docum
 const openedDays = document.getElementById('openedDays')
 const addSubjectBtn = document.getElementById('addSubjectBtn'), newSubjectName = document.getElementById('newSubjectName'), newSubjectColor = document.getElementById('newSubjectColor')
 const weeklyChartTarget = document.getElementById('weeklyChart')
+const studentOverlay = document.getElementById('studentOverlay'), studentListArea = document.getElementById('studentListArea'), closeStudentOverlay = document.getElementById('closeStudentOverlay')
 
 /* --------------------------
    Local load/save
    -------------------------- */
-
-/* normalizeHourSegments
-   - Ensure day keys exist
-   - Ensure 24 hours, each with SEG_H segments
-   - Clamp filledMs to [0, SEG_MS]
-   - Detect "all-filled" corruption: if >=95% segments are full for that day and day != today => reset day to zeros
- */
-function normalizeHourSegments(raw){
-  const out = {}
-  try{
-    if(!raw || typeof raw !== 'object') raw = {}
-    const keys = new Set(Object.keys(raw || {}))
-    keys.add(todayY())
-    for(const day of Array.from(keys)){
-      const rawDay = raw[day]
-      const hours = Array.from({length:24}, (_,h)=>{
-        const hourArr = Array.isArray(rawDay) && Array.isArray(rawDay[h]) ? rawDay[h] : null
-        return Array.from({length:SEG_H}, (_,si)=>{
-          const seg = hourArr && hourArr[si] ? hourArr[si] : { subject:'', filledMs:0 }
-          const subject = (typeof seg.subject === 'string') ? seg.subject : ''
-          let filledMs = Number(seg.filledMs) || 0
-          if(!isFinite(filledMs) || filledMs < 0) filledMs = 0
-          if(filledMs > SEG_MS) filledMs = SEG_MS
-          return { subject, filledMs }
-        })
-      })
-      // corruption detection: if almost every segment is full (>=95%) and day is not today, treat as suspicious
-      const allSegments = hours.flat()
-      const fullCount = allSegments.reduce((a,s)=> a + (s.filledMs >= SEG_MS ? 1 : 0), 0)
-      const ratio = fullCount / allSegments.length
-      if(ratio >= 0.95 && day !== todayY()){
-        // suspicious: reset to zeros for safety and log
-        console.warn(`normalizeHourSegments: detected suspicious all-filled day ${day} (ratio ${ratio.toFixed(2)}). resetting that day to zeros.`)
-        out[day] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0})))
-      } else {
-        out[day] = hours
-      }
-    }
-  }catch(e){
-    console.warn('normalizeHourSegments error', e)
-    out[todayY()] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0})))
-  }
-  return out
-}
-
 function loadLocal(){
-  try{
-    const raw = localStorage.getItem(STORAGE)
-    if(raw){
-      const parsed = JSON.parse(raw)
-      if(parsed?.hourSegments){
-        state.hourSegments = normalizeHourSegments(parsed.hourSegments)
-      } else {
-        state.hourSegments = normalizeHourSegments({})
-      }
-      if(parsed?.colors) state.colors = parsed.colors
-      // Do NOT restore _lastTick from local storage. Avoid huge backfills.
-      if(parsed?.timer){
-        state.timer.sessionAccumulatedMs = Number(parsed.timer.sessionAccumulatedMs) || 0
-        state.timer.running = !!parsed.timer.running
-        state.timer._lastTick = null
-      }
-    } else {
-      state.hourSegments = normalizeHourSegments({})
-    }
-  }catch(e){ console.warn('loadLocal', e); state.hourSegments = normalizeHourSegments({}) }
+  try{ const raw = localStorage.getItem(STORAGE); if(raw){ const parsed = JSON.parse(raw); state = Object.assign({}, state, parsed) } }catch(e){ console.warn('loadLocal', e) }
+  SUBJECTS.forEach(s => { if(!state.colors[s.key]) state.colors[s.key] = s.color })
 }
-function saveLocal(){ try{ const slim = { hourSegments: state.hourSegments, colors: state.colors, timer: { running: !!state.timer.running, sessionAccumulatedMs: state.timer.sessionAccumulatedMs } }; localStorage.setItem(STORAGE, JSON.stringify(slim)) }catch(e){ console.warn('saveLocal', e) }
+function saveLocal(){ try{ localStorage.setItem(STORAGE, JSON.stringify(state)) }catch(e){ console.warn('saveLocal', e) } }
 
 /* --------------------------
    Session persistence helpers
    -------------------------- */
-function saveSessionLocal(session){
-  try{
-    if(!session){ localStorage.removeItem(SESSION_KEY); return }
-    const slim = { access_token: session.access_token, refresh_token: session.refresh_token, user: session.user }
-    localStorage.setItem(SESSION_KEY, JSON.stringify(slim))
-  }catch(e){ console.warn('saveSessionLocal', e) }
+function saveSessionLocal(session){ try{ if(!session){ localStorage.removeItem(SESSION_KEY); return } const slim = { access_token: session.access_token, refresh_token: session.refresh_token, user: session.user }; localStorage.setItem(SESSION_KEY, JSON.stringify(slim)) }catch(e){ console.warn('saveSessionLocal', e) }
 }
 async function restoreSessionLocalIfNeeded(){
   try{
@@ -368,29 +276,12 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 /* --------------------------
    helpers
    -------------------------- */
-const fmt = ms => {
-  if(!ms) return '0:00:00'
-  let s = Math.floor(ms/1000), h = Math.floor(s/3600)
-  s = s % 3600
-  const m = Math.floor(s/60), sec = s%60
-  return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
-}
+const fmt = ms => { if(!ms) return '0:00:00'; let s = Math.floor(ms/1000), h = Math.floor(s/3600); s = s % 3600; const m = Math.floor(s/60), sec = s%60; return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` }
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 const todayY = ()=> ymd(new Date())
 const timeIn = d => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
 function ensureDay(dayStr){ if(!state.hourSegments[dayStr]) state.hourSegments[dayStr] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0}))) }
-function shade(hex, percent){
-  const h = hex.replace('#','')
-  const r = parseInt(h.substring(0,2),16)
-  const g = parseInt(h.substring(2,4),16)
-  const b = parseInt(h.substring(4,6),16)
-  const t = percent < 0 ? 0 : 255
-  const p = Math.abs(percent)/100
-  const R = Math.round((t-r)*p)+r
-  const G = Math.round((t-g)*p)+g
-  const B = Math.round((t-b)*p)+b
-  return `rgb(${R}, ${G}, ${B})`
-}
+function shade(hex, percent){ const h = hex.replace('#',''); const r = parseInt(h.substring(0,2),16); const g = parseInt(h.substring(2,4),16); const b = parseInt(h.substring(4,6),16); const t = percent < 0 ? 0 : 255; const p = Math.abs(percent)/100; const R = Math.round((t-r)*p)+r; const G = Math.round((t-g)*p)+g; const B = Math.round((t-b)*p)+b; return `rgb(${R}, ${G}, ${B})` }
 
 /* --------------------------
    Palette & subjects
@@ -398,18 +289,13 @@ function shade(hex, percent){
 function buildPalette(){
   palette.innerHTML = ''
   legend.innerHTML = ''
-  // ensure SUBJECTS reflected in state.colors
   SUBJECTS.forEach((s, idx) => {
     if(!state.colors[s.key]) state.colors[s.key] = s.color
-    // button
     const btn = document.createElement('button')
-    btn.className = 'subject-btn'
-    btn.dataset.key = s.key
-    btn.style.background = state.colors[s.key]
+    btn.className = 'subject-btn'; btn.dataset.key = s.key; btn.style.background = state.colors[s.key]
     btn.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:${shade(state.colors[s.key],-8)}"></div><div>${s.name}</div>`
     btn.addEventListener('click', ()=>{ sel = s.key; highlightSelected() })
     palette.appendChild(btn)
-    // legend item
     const item = document.createElement('div'); item.className='item'
     item.style.display='flex'; item.style.alignItems='center'; item.style.gap='8px'
     const sw = document.createElement('div'); sw.style.width='18px'; sw.style.height='12px'; sw.style.borderRadius='6px'; sw.style.background=state.colors[s.key]
@@ -422,46 +308,16 @@ function buildPalette(){
   highlightSelected()
 }
 function rebuildColors(){
-  palette.querySelectorAll('.subject-btn').forEach(b=>{
-    const k = b.dataset.key
-    b.style.background = state.colors[k]
-    const dot = b.querySelector('div')
-    if(dot) dot.style.background = shade(state.colors[k], -8)
-  })
-  // update legend sw
-  Array.from(legend.querySelectorAll('.item')).forEach((it, idx)=>{
-    const sw = it.querySelector('div')
-    if(sw && SUBJECTS[idx]) sw.style.background = state.colors[SUBJECTS[idx].key]
-    const colorInp = it.querySelector('input[type="color"]')
-    if(colorInp && SUBJECTS[idx]) colorInp.value = state.colors[SUBJECTS[idx].key]
-  })
+  palette.querySelectorAll('.subject-btn').forEach(b=>{ const k = b.dataset.key; b.style.background = state.colors[k]; const dot = b.querySelector('div'); if(dot) dot.style.background = shade(state.colors[k], -8) })
+  Array.from(legend.querySelectorAll('.item')).forEach((it, idx)=>{ const sw = it.querySelector('div'); if(sw && SUBJECTS[idx]) sw.style.background = state.colors[SUBJECTS[idx].key]; const colorInp = it.querySelector('input[type="color"]'); if(colorInp && SUBJECTS[idx]) colorInp.value = state.colors[SUBJECTS[idx].key] })
 }
-function highlightSelected(){
-  palette.querySelectorAll('.subject-btn').forEach(b=>{
-    if(b.dataset.key === sel) b.style.boxShadow = '0 6px 20px rgba(2,6,23,0.12)'
-    else b.style.boxShadow = 'none'
-  })
-}
-addSubjectBtn.addEventListener('click', ()=>{
-  const name = (newSubjectName.value||'').trim()
-  const color = newSubjectColor.value || '#7c3aed'
-  if(!name) return alert('教科名を入力してください')
-  let key = name.toLowerCase().replace(/[^\w]+/g,'_')
-  let base = key, suffix = 1
-  while(SUBJECTS.some(s=>s.key === key)){ key = base + '_' + (suffix++) }
-  const subj = { key, name, color }
-  SUBJECTS.push(subj)
-  state.colors[key] = color
-  newSubjectName.value = ''
-  buildPalette()
-  saveLocal()
-})
+function highlightSelected(){ palette.querySelectorAll('.subject-btn').forEach(b=>{ if(b.dataset.key === sel) b.style.boxShadow = '0 6px 20px rgba(2,6,23,0.12)'; else b.style.boxShadow = 'none' }) }
+addSubjectBtn.addEventListener('click', ()=>{ const name = (newSubjectName.value||'').trim(); const color = newSubjectColor.value || '#7c3aed'; if(!name) return alert('教科名を入力してください'); let key = name.toLowerCase().replace(/[^\w]+/g,'_'); let base = key, suffix = 1; while(SUBJECTS.some(s=>s.key === key)){ key = base + '_' + (suffix++) } const subj = { key, name, color }; SUBJECTS.push(subj); state.colors[key] = color; newSubjectName.value = ''; buildPalette(); saveLocal() })
 
 /* --------------------------
    Grid / render
    -------------------------- */
-function buildGrid(){
-  hoursGrid.innerHTML = ''
+function buildGrid(){ hoursGrid.innerHTML = ''
   for(let h=0; h<24; h++){
     const col = document.createElement('div'); col.className='hour-col'; col.dataset.hour = h
     const header = document.createElement('div'); header.className='hour-header'; header.textContent = `${h}:00`
@@ -469,106 +325,21 @@ function buildGrid(){
     col.appendChild(header); col.appendChild(cell); hoursGrid.appendChild(col)
   }
 }
-function renderCell(dateStr, hour){
-  ensureDay(dateStr)
-  const segs = state.hourSegments[dateStr][hour]
-  const col = hoursGrid.querySelector(`.hour-col[data-hour='${hour}']`)
-  if(!col) return
-  const cell = col.querySelector('.hour-cell')
-  cell.innerHTML = ''
-  const wrap = document.createElement('div'); wrap.className='segments'
-  for(let i=0;i<SEG_H;i++){
-    const s = segs[i]
-    // clamp as safety
-    s.filledMs = Math.max(0, Math.min(SEG_MS, Number(s.filledMs) || 0))
-    const segDiv = document.createElement('div'); segDiv.className='segment'
-    const fill = document.createElement('div'); fill.className='fill'
-    const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS))
-    fill.style.width = (pct*100) + '%'
-    if(s.subject && state.colors[s.subject]) fill.style.background = `linear-gradient(90deg, ${state.colors[s.subject]}, ${shade(state.colors[s.subject],-8)})`
-    segDiv.appendChild(fill); wrap.appendChild(segDiv)
-  }
-  const label = document.createElement('div'); label.className='cell-label'
-  const allSubjs = new Set(segs.map(s=>s.subject||''))
-  if(allSubjs.size === 1 && !allSubjs.has('')) label.textContent = SUBJECTS.find(x=>x.key===segs[0].subject)?.name || ''
-  const overlay = document.createElement('div'); overlay.className='overlay'
-  const totalFilled = segs.reduce((a,b)=>a+(b.filledMs||0),0)
-  overlay.textContent = (totalFilled >= 3600000) ? '完了' : ''
+function renderCell(dateStr, hour){ ensureDay(dateStr); const segs = state.hourSegments[dateStr][hour]; const col = hoursGrid.querySelector(`.hour-col[data-hour='${hour}']`); if(!col) return; const cell = col.querySelector('.hour-cell'); cell.innerHTML = ''; const wrap = document.createElement('div'); wrap.className='segments'
+  for(let i=0;i<SEG_H;i++){ const s = segs[i]; const segDiv = document.createElement('div'); segDiv.className='segment'; const fill = document.createElement('div'); fill.className='fill'; const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS)); fill.style.width = (pct*100) + '%'; if(s.subject && state.colors[s.subject]) fill.style.background = `linear-gradient(90deg, ${state.colors[s.subject]}, ${shade(state.colors[s.subject],-8)})`; segDiv.appendChild(fill); wrap.appendChild(segDiv) }
+  const label = document.createElement('div'); label.className='cell-label'; const allSubjs = new Set(segs.map(s=>s.subject||'')); if(allSubjs.size === 1 && !allSubjs.has('')) label.textContent = SUBJECTS.find(x=>x.key===segs[0].subject)?.name || ''
+  const overlay = document.createElement('div'); overlay.className='overlay'; const totalFilled = segs.reduce((a,b)=>a+(b.filledMs||0),0); overlay.textContent = (totalFilled >= 3600000) ? '完了' : ''
   cell.appendChild(wrap); cell.appendChild(label); cell.appendChild(overlay)
 }
-function renderAll(){
-  if(!dateInput.value) dateInput.value = todayY()
-  const dateStr = dateInput.value
-  ensureDay(dateStr)
-  for(let h=0; h<24; h++) renderCell(dateStr,h)
-  renderTotals()
-  updateButtonStyles()
-  saveLocal()
-}
-function onHourClick(hour){
-  const dateStr = dateInput.value
-  ensureDay(dateStr)
-  const segs = state.hourSegments[dateStr][hour]
-  let changed = false
-  for(let i=0;i<SEG_H;i++){
-    if(segs[i].filledMs === 0 && segs[i].subject !== sel){
-      segs[i].subject = sel; changed = true
-    }
-  }
-  if(changed){ scheduleSave(); renderAll() }
-}
+function renderAll(){ if(!dateInput.value) dateInput.value = todayY(); const dateStr = dateInput.value; ensureDay(dateStr); sanitizeFutureSegments(dateStr); for(let h=0; h<24; h++) renderCell(dateStr,h); renderTotals(); updateButtonStyles(); saveLocal() }
+function onHourClick(hour){ const dateStr = dateInput.value; ensureDay(dateStr); const segs = state.hourSegments[dateStr][hour]; let changed = false; for(let i=0;i<SEG_H;i++){ if(segs[i].filledMs === 0 && segs[i].subject !== sel){ segs[i].subject = sel; changed = true } } if(changed){ scheduleSave(); renderAll() } }
 
 /* --------------------------
    Timer
    -------------------------- */
-function getSegmentStartMs(ts){
-  const d = new Date(ts); const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-  const minutesSinceDay = Math.floor((ts - dayStart)/60000)
-  const segIndexOverall = Math.floor(minutesSinceDay / SEG_MIN)
-  return dayStart + segIndexOverall * SEG_MS
-}
-function allocateDelta(prevMs, nowMs){
-  if(!state.timer.running) return
-  if(nowMs <= prevMs) return
-  // Guard against absurdly old prevMs (avoid huge backfill)
-  if(!prevMs || !isFinite(prevMs) || prevMs < (Date.now() - 1000*60*60*24*7)){
-    prevMs = nowMs - 1000
-  }
-  let cur = prevMs
-  const subject = sel
-  let safety = 0
-  while(cur < nowMs && safety++ < 20000){
-    const segStart = getSegmentStartMs(cur)
-    const segEnd = segStart + SEG_MS
-    const addAvailable = Math.min(segEnd, nowMs) - cur
-    const d = new Date(segStart)
-    const dateStr = ymd(d)
-    const hour = d.getHours()
-    const minutesSinceHour = Math.floor((segStart - new Date(d.getFullYear(), d.getMonth(), d.getDate(), hour).getTime())/60000)
-    const segIndex = Math.floor(minutesSinceHour / SEG_MIN)
-    ensureDay(dateStr)
-    const seg = state.hourSegments[dateStr][hour][segIndex]
-    const before = seg.filledMs || 0
-    const canAdd = Math.min(SEG_MS - before, addAvailable)
-    if(canAdd > 0){
-      if(!seg.subject) seg.subject = subject
-      seg.filledMs = before + canAdd
-      state.timer.sessionAccumulatedMs = (state.timer.sessionAccumulatedMs || 0) + canAdd
-      cur += canAdd
-    } else {
-      cur = segEnd
-    }
-  }
-}
-function tick(){
-  const now = Date.now()
-  const prev = state.timer._lastTick || now
-  allocateDelta(prev, now)
-  state.timer._lastTick = now
-  updateElapsedDisplay()
-  renderAll()
-  scheduleSave()
-}
+function getSegmentStartMs(ts){ const d = new Date(ts); const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); const minutesSinceDay = Math.floor((ts - dayStart)/60000); const segIndexOverall = Math.floor(minutesSinceDay / SEG_MIN); return dayStart + segIndexOverall * SEG_MS }
+function allocateDelta(prevMs, nowMs){ if(nowMs <= prevMs) return; let cur = prevMs; const subject = sel; while(cur < nowMs){ const segStart = getSegmentStartMs(cur); const segEnd = segStart + SEG_MS; const addAvailable = Math.min(segEnd, nowMs) - cur; const d = new Date(segStart); const dateStr = ymd(d); const hour = d.getHours(); const minutesSinceHour = Math.floor((segStart - new Date(d.getFullYear(), d.getMonth(), d.getDate(), hour).getTime())/60000); const segIndex = Math.floor(minutesSinceHour / SEG_MIN); ensureDay(dateStr); const seg = state.hourSegments[dateStr][hour][segIndex]; const before = seg.filledMs || 0; const canAdd = Math.min(SEG_MS - before, addAvailable); if(canAdd > 0){ if(!seg.subject) seg.subject = subject; seg.filledMs = before + canAdd; state.timer.sessionAccumulatedMs = (state.timer.sessionAccumulatedMs || 0) + canAdd; cur += canAdd } else { cur = segEnd } } }
+function tick(){ const now = Date.now(); const prev = state.timer._lastTick || now; allocateDelta(prev, now); state.timer._lastTick = now; updateElapsedDisplay(); renderAll(); scheduleSave() }
 function updateElapsedDisplay(){ elapsedLabel.textContent = fmt(state.timer.sessionAccumulatedMs || 0); const dateStr = dateInput.value; ensureDay(dateStr); const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); todayTotalLabel.textContent = fmt(todayMs) }
 function startTimer(){ if(state.timer.running) return; state.timer.running = true; state.timer._lastTick = Date.now(); window._tickI = setInterval(tick, 1000); updateButtonStyles(); saveLocal() }
 function pauseTimer(){ if(!state.timer.running) return; tick(); state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; updateButtonStyles(); saveLocal() }
@@ -579,80 +350,20 @@ function updateButtonStyles(){ if(state.timer.running){ startBtn.textContent = '
 /* --------------------------
    Totals / weekly / graph
    -------------------------- */
-function lastNDates(endDateStr, n){
-  const [y,m,d] = endDateStr.split('-').map(x=>parseInt(x,10))
-  const end = new Date(y, m-1, d)
-  const arr=[]
-  for(let i=n-1;i>=0;i--){
-    const dd = new Date(end); dd.setDate(end.getDate()-i); arr.push(ymd(dd))
-  }
-  return arr
-}
+function lastNDates(endDateStr, n){ const [y,m,d] = endDateStr.split('-').map(x=>parseInt(x,10)); const end = new Date(y, m-1, d); const arr=[]; for(let i=n-1;i>=0;i--){ const dd = new Date(end); dd.setDate(end.getDate()-i); arr.push(ymd(dd)) } return arr }
 function weekdayName(dateStr){ const d = new Date(dateStr); return ['日','月','火','水','木','金','土'][d.getDay()] }
 
-function renderTotals(){
-  const dateStr = dateInput.value
-  ensureDay(dateStr)
-  const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0)
-  todayTotalLabel.textContent = fmt(todayMs)
-
-  const days = lastNDates(dateStr, 7)
-  weeklyList.innerHTML = ''
-  let weeklyTotalMs = 0
-  days.forEach(d=>{
-    ensureDay(d)
-    const total = state.hourSegments[d].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0)
-    weeklyTotalMs += total
-    const div = document.createElement('div')
-    div.style.display='flex'; div.style.justifyContent='space-between'; div.style.padding='6px'; div.style.borderRadius='8px'; div.style.background='#fbfbff'; div.style.cursor='pointer'; div.style.marginBottom='6px'
-    const left = document.createElement('div'); left.textContent = `${d} (${weekdayName(d)})`
-    const right = document.createElement('div'); right.textContent = fmt(total)
-    div.appendChild(left); div.appendChild(right)
-    div.addEventListener('click', ()=>{ toggleDay(d, div) })
-    if(selectedDays.has(d)) div.style.boxShadow='0 6px 18px rgba(66,97,242,0.04)'
-    weeklyList.appendChild(div)
-  })
+function renderTotals(){ const dateStr = dateInput.value; ensureDay(dateStr); const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); todayTotalLabel.textContent = fmt(todayMs)
+  const days = lastNDates(dateStr, 7); weeklyList.innerHTML = ''; let weeklyTotalMs = 0; days.forEach(d=>{ ensureDay(d); const total = state.hourSegments[d].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); weeklyTotalMs += total; const div = document.createElement('div'); div.style.display='flex'; div.style.justifyContent='space-between'; div.style.padding='6px'; div.style.borderRadius='8px'; div.style.background='#fbfbff'; div.style.cursor='pointer'; div.style.marginBottom='6px'; const left = document.createElement('div'); left.textContent = `${d} (${weekdayName(d)})`; const right = document.createElement('div'); right.textContent = fmt(total); div.appendChild(left); div.appendChild(right); div.addEventListener('click', ()=>{ toggleDay(d, div) }); if(selectedDays.has(d)) div.style.boxShadow='0 6px 18px rgba(66,97,242,0.04)'; weeklyList.appendChild(div) })
   if(weeklyTotalMs > 0){ weeklyTotalBox.style.display='block'; weeklyTotalLabel.textContent = fmt(weeklyTotalMs) } else { weeklyTotalBox.style.display='none' }
-  renderSelected()
-  renderWeeklyChart()
+  renderSelected(); renderWeeklyChart()
 }
 
-/* keep selected day panels (optional) */
-function toggleDay(d, el){
-  if(selectedDays.has(d)){ selectedDays.delete(d); el.style.boxShadow='none' }
-  else { selectedDays.add(d); el.style.boxShadow='0 6px 18px rgba(66,97,242,0.04)' }
-  renderSelected()
-}
-function renderSelected(){
-  openedDays.innerHTML = ''
-  if(selectedDays.size === 0) return
-  selectedDays.forEach(d=>{
-    ensureDay(d)
-    const panel = document.createElement('div'); panel.className='compact-day'
-    const header = document.createElement('div'); header.style.display='flex'; header.style.justifyContent='space-between'; header.style.alignItems='center'; header.style.marginBottom='8px'
-    const title = document.createElement('div'); title.innerHTML = `<strong>${d} (${weekdayName(d)})</strong>`
-    const closeBtn = document.createElement('button'); closeBtn.className='btn ghost'; closeBtn.style.fontSize='12px'; closeBtn.textContent='閉じる'
-    closeBtn.onclick = ()=>{ selectedDays.delete(d); renderSelected(); renderTotals() }
-    header.appendChild(title); header.appendChild(closeBtn); panel.appendChild(header)
-    const grid = document.createElement('div'); grid.className='compact-grid'
-    for(let h=0; h<24; h++){
-      const hourCol = document.createElement('div'); hourCol.className='compact-hour'
-      const hh = document.createElement('div'); hh.className='hour-header'; hh.style.fontSize='12px'; hh.style.marginBottom='6px'; hh.textContent = `${h}:00`
-      const cell = document.createElement('div'); cell.className='compact-cell'
-      const segWrap = document.createElement('div'); segWrap.style.display='flex'; segWrap.style.height='100%'; segWrap.style.setProperty('--seg-count', SEG_H)
-      const segs = state.hourSegments[d][h]
-      for(let i=0;i<SEG_H;i++){
-        const s = segs[i]; const segDiv = document.createElement('div'); segDiv.style.flex='0 0 calc(100% / '+SEG_H+')'; segDiv.style.position='relative'
-        const fill = document.createElement('div'); fill.style.height='100%'; const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS))
-        if(s.subject && state.colors[s.subject]) fill.style.background = `linear-gradient(90deg, ${state.colors[s.subject]}, ${shade(state.colors[s.subject],-8)})`
-        else fill.style.background = 'transparent'
-        fill.style.width = (pct*100) + '%'; fill.style.transition='width .2s linear'; segDiv.appendChild(fill); segWrap.appendChild(segDiv)
-      }
-      cell.appendChild(segWrap); hourCol.appendChild(hh); hourCol.appendChild(cell); grid.appendChild(hourCol)
-    }
+function toggleDay(d, el){ if(selectedDays.has(d)){ selectedDays.delete(d); el.style.boxShadow='none' } else { selectedDays.add(d); el.style.boxShadow='0 6px 18px rgba(66,97,242,0.04)' } renderSelected() }
+function renderSelected(){ openedDays.innerHTML = ''; if(selectedDays.size === 0) return; selectedDays.forEach(d=>{ ensureDay(d); const panel = document.createElement('div'); panel.className='compact-day'; const header = document.createElement('div'); header.style.display='flex'; header.style.justifyContent='space-between'; header.style.alignItems='center'; header.style.marginBottom='8px'; const title = document.createElement('div'); title.innerHTML = `<strong>${d} (${weekdayName(d)})</strong>`; const closeBtn = document.createElement('button'); closeBtn.className='btn ghost'; closeBtn.style.fontSize='12px'; closeBtn.textContent='閉じる'; closeBtn.onclick = ()=>{ selectedDays.delete(d); renderSelected(); renderTotals() }; header.appendChild(title); header.appendChild(closeBtn); panel.appendChild(header); const grid = document.createElement('div'); grid.className='compact-grid'
+    for(let h=0; h<24; h++){ const hourCol = document.createElement('div'); hourCol.className='compact-hour'; const hh = document.createElement('div'); hh.className='hour-header'; hh.style.fontSize='12px'; hh.style.marginBottom='6px'; hh.textContent = `${h}:00`; const cell = document.createElement('div'); cell.className='compact-cell'; const segWrap = document.createElement('div'); segWrap.style.display='flex'; segWrap.style.height='100%'; segWrap.style.setProperty('--seg-count', SEG_H); const segs = state.hourSegments[d][h]; for(let i=0;i<SEG_H;i++){ const s = segs[i]; const segDiv = document.createElement('div'); segDiv.style.flex='0 0 calc(100% / '+SEG_H+')'; segDiv.style.position='relative'; const fill = document.createElement('div'); fill.style.height='100%'; const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS)); if(s.subject && state.colors[s.subject]) fill.style.background = `linear-gradient(90deg, ${state.colors[s.subject]}, ${shade(state.colors[s.subject],-8)})`; else fill.style.background = 'transparent'; fill.style.width = (pct*100) + '%'; fill.style.transition='width .2s linear'; segDiv.appendChild(fill); segWrap.appendChild(segDiv) } cell.appendChild(segWrap); hourCol.appendChild(hh); hourCol.appendChild(cell); grid.appendChild(hourCol) }
     panel.appendChild(grid); openedDays.appendChild(panel)
-  })
-}
+  }) }
 
 /* --------------------------
    Remote persistence (Supabase)
@@ -663,7 +374,8 @@ async function saveRemote(){
     const session = data?.session
     if(!session || !session.user) return
     const payload = { user_id: session.user.id, data: state.hourSegments }
-    const { error } = await supabase.from('user_hours').upsert(payload, { onConflict: 'user_id' })
+    // upsert on user_id to avoid duplicates
+    const { error } = await supabase.from('user_hours').upsert(payload, { onConflict: ['user_id'] })
     if(error) console.warn('saveRemote err', error)
     else state._user_saved = true
   }catch(e){ console.warn('saveRemote', e) }
@@ -675,12 +387,8 @@ async function loadRemoteFor(uid){
   try{
     const { data, error } = await supabase.from('user_hours').select('data').eq('user_id', uid).maybeSingle()
     if(error){ console.warn('loadRemoteFor error', error); return }
-    if(data && data.data){
-      state.hourSegments = normalizeHourSegments(data.data)
-      saveLocal()
-      renderAll()
-      state._user_saved = true
-    }
+    if(data && data.data){ state.hourSegments = data.data; saveLocal(); renderAll(); state._user_saved = true }
+    else { console.log('no remote data for', uid) }
   }catch(e){ console.warn('loadRemoteFor', e) }
 }
 
@@ -695,7 +403,9 @@ function renderAuthUI(email, role){
     const t = document.createElement('div'); t.style.fontWeight='700'; t.textContent = email
     const out = document.createElement('button'); out.className='btn ghost'; out.textContent='サインアウト'; out.onclick = signOut
     authControls.appendChild(t); authControls.appendChild(out)
-    if(role === 'teacher'){ const a = document.createElement('button'); a.className='btn'; a.textContent='先生メニュー'; a.onclick = ()=> alert('先生メニュー（未実装）'); authControls.appendChild(a) }
+    if(role === 'teacher'){
+      const a = document.createElement('button'); a.className='btn'; a.textContent='先生メニュー'; a.onclick = openTeacherMenu; authControls.appendChild(a)
+    }
   }
 }
 
@@ -711,7 +421,8 @@ async function openEmail(){
     const { data, error } = await supabase.auth.signUp({ email, password })
     if(error){ alert('登録エラー: ' + error.message); return }
     if(data?.user?.id){
-      await supabase.from('user_profiles').upsert({ user_id: data.user.id, role })
+      // store role and email in user_profiles so teacher can lookup students
+      await supabase.from('user_profiles').upsert({ user_id: data.user.id, role, email }, { onConflict: ['user_id'] })
     }
     const { data: sessData } = await supabase.auth.getSession()
     if(sessData?.session){ saveSessionLocal(sessData.session); renderAuthUI(sessData.session.user.email, role); authStatus.textContent = `ログイン: ${sessData.session.user.email}`; await loadRemoteFor(sessData.session.user.id) }
@@ -723,7 +434,7 @@ async function openEmail(){
     if(session){
       saveSessionLocal(session)
       const uid = session.user.id
-      const rp = await supabase.from('user_profiles').select('role').eq('user_id', uid).maybeSingle()
+      const rp = await supabase.from('user_profiles').select('role,email').eq('user_id', uid).maybeSingle()
       const role = rp.data?.role || null
       renderAuthUI(session.user.email, role)
       authStatus.textContent = 'ログイン:' + session.user.email
@@ -731,151 +442,97 @@ async function openEmail(){
     } else {
       const { data: g } = await supabase.auth.getSession()
       const s = g?.session
-      if(s){ saveSessionLocal(s); const uid = s.user.id; const rp = await supabase.from('user_profiles').select('role').eq('user_id', uid).maybeSingle(); const role = rp.data?.role||null; renderAuthUI(s.user.email,role); authStatus.textContent='ログイン:'+s.user.email; await loadRemoteFor(uid) }
+      if(s){ saveSessionLocal(s); const uid = s.user.id; const rp = await supabase.from('user_profiles').select('role,email').eq('user_id', uid).maybeSingle(); const role = rp.data?.role||null; renderAuthUI(s.user.email,role); authStatus.textContent='ログイン:'+s.user.email; await loadRemoteFor(uid) }
     }
   }
 }
 
-async function signOut(){
-  try{ await supabase.auth.signOut() }catch(e){ console.warn(e) }
-  clearSavedSession()
-  renderAuthUI(null)
-  authStatus.textContent = 'サインアウト'
-}
+async function signOut(){ try{ await supabase.auth.signOut() }catch(e){ console.warn(e) } clearSavedSession(); renderAuthUI(null); authStatus.textContent = 'サインアウト' }
 
-async function fetchRoleForUser(userId){
+async function fetchRoleForUser(userId){ try{ const { data, error } = await supabase.from('user_profiles').select('role').eq('user_id', userId).maybeSingle(); if(error){ console.warn('role fetch', error); return null } return data?.role || null }catch(e){ console.error(e); return null } }
+
+/* --------------------------
+   Teacher helpers: fetch student list & load
+   -------------------------- */
+async function openTeacherMenu(){
+  studentOverlay.style.display = 'flex'
+  studentListArea.innerHTML = '取得中…'
   try{
-    const { data, error } = await supabase.from('user_profiles').select('role').eq('user_id', userId).maybeSingle()
-    if(error){ console.warn('role fetch', error); return null }
-    return data?.role || null
-  }catch(e){ console.error(e); return null }
+    const { data, error } = await supabase.from('user_profiles').select('user_id,email,role').eq('role','student')
+    if(error){ studentListArea.innerHTML = '生徒一覧取得エラー'; console.warn(error); return }
+    if(!data || data.length === 0){ studentListArea.innerHTML = '生徒データが登録されていません' }
+    else {
+      const list = document.createElement('div')
+      data.forEach(p=>{
+        const row = document.createElement('div'); row.style.display='flex'; row.style.justifyContent='space-between'; row.style.alignItems='center'; row.style.padding='8px'; row.style.borderBottom='1px solid rgba(0,0,0,0.04)'
+        const left = document.createElement('div'); left.textContent = p.email ? `${p.email} (${p.user_id.slice(0,6)})` : p.user_id
+        const loadBtn = document.createElement('button'); loadBtn.className = 'btn ghost'; loadBtn.textContent = '読み込む'; loadBtn.onclick = async ()=>{ await loadRemoteFor(p.user_id); studentOverlay.style.display='none' }
+        row.appendChild(left); row.appendChild(loadBtn); list.appendChild(row)
+      })
+      studentListArea.innerHTML = ''
+      studentListArea.appendChild(list)
+    }
+  }catch(e){ studentListArea.innerHTML = '生徒一覧取得例外'; console.warn(e) }
 }
+closeStudentOverlay.addEventListener('click', ()=> studentOverlay.style.display='none')
 
 /* --------------------------
    Weekly chart
    -------------------------- */
 function renderWeeklyChart(){
-  const chartDiv = document.getElementById('weeklyChart');
-  if(!chartDiv) return;
-  if(!chartDiv.style.height || chartDiv.style.height === '') chartDiv.style.height = '160px';
-  chartDiv.innerHTML = '';
-
+  const chartDiv = document.getElementById('weeklyChart'); if(!chartDiv) return; if(!chartDiv.style.height || chartDiv.style.height === '') chartDiv.style.height = '160px'; chartDiv.innerHTML = ''
   const days = lastNDates(dateInput.value || todayY(), 7);
-  const totals = days.map(d => {
-    if(!state.hourSegments[d]) return 0;
-    return state.hourSegments[d].reduce((a,h)=>a+h.reduce((aa,s)=>aa + (s.filledMs||0),0),0) / 3600000;
-  });
-
-  const containerW = chartDiv.clientWidth;
-  const containerH = chartDiv.clientHeight || 160;
-  if(containerW === 0){ requestAnimationFrame(()=>{ renderWeeklyChart(); }); return; }
-
-  const margin = { top: 20, right: 12, bottom: 28, left: 12 };
-  const w = containerW;
-  const h = containerH;
-  const innerW = Math.max(10, w - margin.left - margin.right);
-  const innerH = Math.max(10, h - margin.top - margin.bottom);
-
-  const svgNS = "http://www.w3.org/2000/svg";
-  const svg = document.createElementNS(svgNS,'svg');
-  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
-  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
-  svg.setAttribute('width', '100%');
-  svg.setAttribute('height', '100%');
-  svg.style.display = 'block';
-  svg.innerHTML = '';
-
-  for(let i=0;i<=4;i++){
-    const ly = margin.top + i * (innerH / 4);
-    const line = document.createElementNS(svgNS,'line');
-    line.setAttribute('x1', margin.left);
-    line.setAttribute('x2', margin.left + innerW);
-    line.setAttribute('y1', ly);
-    line.setAttribute('y2', ly);
-    line.setAttribute('stroke', 'rgba(15,23,36,0.04)');
-    line.setAttribute('stroke-width', '1');
-    svg.appendChild(line);
-  }
-
-  const n = totals.length;
-  const stepX = n > 1 ? innerW / (n-1) : innerW;
-  const maxTotal = Math.max(...totals, 1);
-  const points = totals.map((t,i)=>{
-    const x = Math.round(margin.left + i * stepX);
-    const y = Math.round(margin.top + (1 - (t / maxTotal)) * innerH);
-    return [x,y];
-  });
-
-  const path = document.createElementNS(svgNS,'path');
-  const d = points.map((p,i)=> i===0?`M${p[0]} ${p[1]}`:`L${p[0]} ${p[1]}`).join(' ');
-  path.setAttribute('d', d);
-  path.setAttribute('fill', 'none');
-  path.setAttribute('stroke', '#4461f2');
-  path.setAttribute('stroke-width', '3');
-  path.setAttribute('stroke-linejoin', 'round');
-  path.setAttribute('stroke-linecap', 'round');
-  svg.appendChild(path);
-
-  try{
-    const area = document.createElementNS(svgNS,'path');
-    const areaD = `${d} L ${margin.left + innerW} ${margin.top + innerH} L ${margin.left} ${margin.top + innerH} Z`;
-    area.setAttribute('d', areaD);
-    area.setAttribute('fill', 'rgba(68,97,242,0.06)');
-    svg.insertBefore(area, path);
-  }catch(e){}
-
-  points.forEach((p,i)=>{
-    const circ = document.createElementNS(svgNS,'circle');
-    circ.setAttribute('cx', p[0]); circ.setAttribute('cy', p[1]); circ.setAttribute('r', 4); circ.setAttribute('fill', '#4461f2');
-    svg.appendChild(circ);
-
-    const tx = document.createElementNS(svgNS,'text');
-    tx.setAttribute('x', p[0]); tx.setAttribute('y', h - 6);
-    tx.setAttribute('text-anchor','middle'); tx.setAttribute('font-size','11'); tx.setAttribute('fill','#0f1724');
-    tx.textContent = days[i].slice(5);
-    svg.appendChild(tx);
-
-    const vl = document.createElementNS(svgNS,'text');
-    vl.setAttribute('x', p[0]); vl.setAttribute('y', p[1] - 8);
-    vl.setAttribute('text-anchor','middle'); vl.setAttribute('font-size','11'); vl.setAttribute('fill','#0f1724');
-    vl.textContent = totals[i].toFixed(1) + 'h';
-    svg.appendChild(vl);
-  });
-
-  chartDiv.appendChild(svg);
-
-  setTimeout(()=>{ reportHeightToParent() }, 60);
+  const totals = days.map(d => { if(!state.hourSegments[d]) return 0; return state.hourSegments[d].reduce((a,h)=>a+h.reduce((aa,s)=>aa + (s.filledMs||0),0),0) / 3600000 });
+  const containerW = chartDiv.clientWidth; const containerH = chartDiv.clientHeight || 160; if(containerW === 0){ requestAnimationFrame(()=>{ renderWeeklyChart(); }); return; }
+  const margin = { top: 20, right: 12, bottom: 28, left: 12 }; const w = containerW; const h = containerH; const innerW = Math.max(10, w - margin.left - margin.right); const innerH = Math.max(10, h - margin.top - margin.bottom);
+  const svgNS = "http://www.w3.org/2000/svg"; const svg = document.createElementNS(svgNS,'svg'); svg.setAttribute('viewBox', `0 0 ${w} ${h}`); svg.setAttribute('preserveAspectRatio', 'xMidYMid meet'); svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%'); svg.style.display = 'block'; svg.innerHTML = ''
+  for(let i=0;i<=4;i++){ const ly = margin.top + i * (innerH / 4); const line = document.createElementNS(svgNS,'line'); line.setAttribute('x1', margin.left); line.setAttribute('x2', margin.left + innerW); line.setAttribute('y1', ly); line.setAttribute('y2', ly); line.setAttribute('stroke', 'rgba(15,23,36,0.04)'); line.setAttribute('stroke-width', '1'); svg.appendChild(line) }
+  const n = totals.length; const stepX = n > 1 ? innerW / (n-1) : innerW; const maxTotal = Math.max(...totals, 1); const points = totals.map((t,i)=>{ const x = Math.round(margin.left + i * stepX); const y = Math.round(margin.top + (1 - (t / maxTotal)) * innerH); return [x,y]; });
+  const path = document.createElementNS(svgNS,'path'); const d = points.map((p,i)=> i===0?`M${p[0]} ${p[1]}`:`L${p[0]} ${p[1]}`).join(' '); path.setAttribute('d', d); path.setAttribute('fill', 'none'); path.setAttribute('stroke', '#4461f2'); path.setAttribute('stroke-width', '3'); path.setAttribute('stroke-linejoin', 'round'); path.setAttribute('stroke-linecap', 'round'); svg.appendChild(path)
+  try{ const area = document.createElementNS(svgNS,'path'); const areaD = `${d} L ${margin.left + innerW} ${margin.top + innerH} L ${margin.left} ${margin.top + innerH} Z`; area.setAttribute('d', areaD); area.setAttribute('fill', 'rgba(68,97,242,0.06)'); svg.insertBefore(area, path) }catch(e){}
+  points.forEach((p,i)=>{ const circ = document.createElementNS(svgNS,'circle'); circ.setAttribute('cx', p[0]); circ.setAttribute('cy', p[1]); circ.setAttribute('r', 4); circ.setAttribute('fill', '#4461f2'); svg.appendChild(circ); const tx = document.createElementNS(svgNS,'text'); tx.setAttribute('x', p[0]); tx.setAttribute('y', h - 6); tx.setAttribute('text-anchor','middle'); tx.setAttribute('font-size','11'); tx.setAttribute('fill','#0f1724'); tx.textContent = days[i].slice(5); svg.appendChild(tx); const vl = document.createElementNS(svgNS,'text'); vl.setAttribute('x', p[0]); vl.setAttribute('y', p[1] - 8); vl.setAttribute('text-anchor','middle'); vl.setAttribute('font-size','11'); vl.setAttribute('fill','#0f1724'); vl.textContent = totals[i].toFixed(1) + 'h'; svg.appendChild(vl) })
+  chartDiv.appendChild(svg); setTimeout(()=>{ reportHeightToParent() }, 60)
 }
 
-/* ResizeObserver と高さ通知（1回だけ追加すれば良い） */
-let _chartResizeObserver = null;
-let _chartResizeDebounce = null;
-function observeWeeklyChartResize(){
-  const chartDiv = document.getElementById('weeklyChart');
-  if(!chartDiv) return;
-  if(_chartResizeObserver) _chartResizeObserver.disconnect();
-  _chartResizeObserver = new ResizeObserver(entries=>{
-    if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce);
-    _chartResizeDebounce = setTimeout(()=>{ renderWeeklyChart(); }, 120);
-  });
-  _chartResizeObserver.observe(chartDiv);
-  window.addEventListener('resize', ()=>{ if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce); _chartResizeDebounce = setTimeout(()=>renderWeeklyChart(), 120) });
-}
-if(document.readyState === 'loading'){
-  document.addEventListener('DOMContentLoaded', ()=>{ observeWeeklyChartResize(); renderWeeklyChart(); });
-} else { observeWeeklyChartResize(); renderWeeklyChart(); }
+let _chartResizeObserver = null; let _chartResizeDebounce = null;
+function observeWeeklyChartResize(){ const chartDiv = document.getElementById('weeklyChart'); if(!chartDiv) return; if(_chartResizeObserver) _chartResizeObserver.disconnect(); _chartResizeObserver = new ResizeObserver(entries=>{ if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce); _chartResizeDebounce = setTimeout(()=>{ renderWeeklyChart(); }, 120); }); _chartResizeObserver.observe(chartDiv); window.addEventListener('resize', ()=>{ if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce); _chartResizeDebounce = setTimeout(()=>renderWeeklyChart(), 120) }) }
+if(document.readyState === 'loading'){ document.addEventListener('DOMContentLoaded', ()=>{ observeWeeklyChartResize(); renderWeeklyChart(); }); } else { observeWeeklyChartResize(); renderWeeklyChart(); }
 
-function reportHeightToParent(){
-  try{
-    const body = document.body;
-    const html = document.documentElement;
-    const height = Math.max(body.scrollHeight, body.offsetHeight, html.clientHeight, html.scrollHeight, html.offsetHeight);
-    if(window.parent && window.parent !== window){
-      window.parent.postMessage({ type: 'child_height', height: height }, location.origin);
-    }
-  }catch(e){ console.warn(e) }
-}
+function reportHeightToParent(){ try{ const body = document.body; const html = document.documentElement; const height = Math.max(body.scrollHeight, body.offsetHeight, html.clientHeight, html.scrollHeight, html.offsetHeight); if(window.parent && window.parent !== window){ window.parent.postMessage({ type: 'child_height', height: height }, location.origin); } }catch(e){ console.warn(e) } }
 new MutationObserver(()=>{ setTimeout(reportHeightToParent, 80) }).observe(document.body, { childList:true, subtree:true, attributes:true });
+
+/* --------------------------
+   sanitize future segments to avoid pre-filled "24h" bug
+   -------------------------- */
+function sanitizeFutureSegments(dateStr){
+  // ensure all segments exist
+  ensureDay(dateStr)
+  try{
+    const today = todayY()
+    const now = Date.now()
+    if(dateStr === today){
+      // for today's date, any segment whose start time is in the future must be zeroed
+      for(let h=0; h<24; h++){
+        for(let si=0; si<SEG_H; si++){
+          const segStart = new Date(dateStr + 'T00:00:00')
+          segStart.setHours(h)
+          segStart.setMinutes(si*SEG_MIN)
+          if(segStart.getTime() > now){ state.hourSegments[dateStr][h][si].filledMs = 0 }
+          // clamp to max SEG_MS
+          if(state.hourSegments[dateStr][h][si].filledMs > SEG_MS) state.hourSegments[dateStr][h][si].filledMs = SEG_MS
+        }
+      }
+    } else {
+      // for past/future dates other than today, just clamp each segment to [0,SEG_MS]
+      for(let h=0; h<24; h++){
+        for(let si=0; si<SEG_H; si++){
+          if(state.hourSegments[dateStr][h][si].filledMs > SEG_MS) state.hourSegments[dateStr][h][si].filledMs = SEG_MS
+          if(state.hourSegments[dateStr][h][si].filledMs < 0) state.hourSegments[dateStr][h][si].filledMs = 0
+        }
+      }
+    }
+  }catch(e){ console.warn('sanitizeFutureSegments', e) }
+}
 
 /* --------------------------
    Init
