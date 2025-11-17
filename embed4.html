@@ -4,7 +4,7 @@
 <style>
   /* embed 側ではスクロールを出さない */
   html, body { height:100%; margin:0; padding:0; overflow:hidden; }
-  /* wrapper (UI) が長くなっても親側で高さ合わせるので内部スクロールは不要 */
+  /* wrapper (UI) が長くなっても親側で高さを合わせるので内部スクロールは不要 */
   .wrap{ overflow:visible; }
 </style>
 
@@ -216,7 +216,7 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
    -------------------------- */
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bndlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 window.supabase = supabase
 
@@ -252,24 +252,25 @@ const addSubjectBtn = document.getElementById('addSubjectBtn'), newSubjectName =
 const weeklyChartTarget = document.getElementById('weeklyChart')
 
 /* --------------------------
-   Local load/save (改良)
-   - normalize 追加
-   - _lastTick を保存しない
+   Local load/save
    -------------------------- */
 
+/* normalizeHourSegments
+   - Ensure day keys exist
+   - Ensure 24 hours, each with SEG_H segments
+   - Clamp filledMs to [0, SEG_MS]
+   - Detect "all-filled" corruption: if >=95% segments are full for that day and day != today => reset day to zeros
+ */
 function normalizeHourSegments(raw){
-  // guarantee object with days -> 24 hours -> SEG_H segments, clamp filledMs
   const out = {}
   try{
     if(!raw || typeof raw !== 'object') raw = {}
-    const keys = Object.keys(raw)
-    // ensure today at minimum
-    const today = todayY()
-    if(!keys.includes(today)) keys.push(today)
-    keys.forEach(day => {
-      const dayVal = raw[day]
+    const keys = new Set(Object.keys(raw || {}))
+    keys.add(todayY())
+    for(const day of Array.from(keys)){
+      const rawDay = raw[day]
       const hours = Array.from({length:24}, (_,h)=>{
-        const hourArr = Array.isArray(dayVal) && Array.isArray(dayVal[h]) ? dayVal[h] : null
+        const hourArr = Array.isArray(rawDay) && Array.isArray(rawDay[h]) ? rawDay[h] : null
         return Array.from({length:SEG_H}, (_,si)=>{
           const seg = hourArr && hourArr[si] ? hourArr[si] : { subject:'', filledMs:0 }
           const subject = (typeof seg.subject === 'string') ? seg.subject : ''
@@ -279,10 +280,20 @@ function normalizeHourSegments(raw){
           return { subject, filledMs }
         })
       })
-      out[day] = hours
-    })
+      // corruption detection: if almost every segment is full (>=95%) and day is not today, treat as suspicious
+      const allSegments = hours.flat()
+      const fullCount = allSegments.reduce((a,s)=> a + (s.filledMs >= SEG_MS ? 1 : 0), 0)
+      const ratio = fullCount / allSegments.length
+      if(ratio >= 0.95 && day !== todayY()){
+        // suspicious: reset to zeros for safety and log
+        console.warn(`normalizeHourSegments: detected suspicious all-filled day ${day} (ratio ${ratio.toFixed(2)}). resetting that day to zeros.`)
+        out[day] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0})))
+      } else {
+        out[day] = hours
+      }
+    }
   }catch(e){
-    console.warn('normalizeHourSegments err', e)
+    console.warn('normalizeHourSegments error', e)
     out[todayY()] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0})))
   }
   return out
@@ -299,38 +310,21 @@ function loadLocal(){
         state.hourSegments = normalizeHourSegments({})
       }
       if(parsed?.colors) state.colors = parsed.colors
-      // prevent restoring an old _lastTick — never restore _lastTick from local storage
+      // Do NOT restore _lastTick from local storage. Avoid huge backfills.
       if(parsed?.timer){
         state.timer.sessionAccumulatedMs = Number(parsed.timer.sessionAccumulatedMs) || 0
         state.timer.running = !!parsed.timer.running
-        // always start with no _lastTick unless running and explicitly started now
         state.timer._lastTick = null
       }
     } else {
       state.hourSegments = normalizeHourSegments({})
-      state.timer = { running:false, sessionAccumulatedMs:0, _lastTick:null }
     }
-  }catch(e){
-    console.warn('loadLocal', e)
-    state.hourSegments = normalizeHourSegments({})
-    state.timer = { running:false, sessionAccumulatedMs:0, _lastTick:null }
-  }
+  }catch(e){ console.warn('loadLocal', e); state.hourSegments = normalizeHourSegments({}) }
 }
-
-function saveLocal(){
-  try{
-    // do not store _lastTick to avoid later huge backfills
-    const copy = {
-      hourSegments: state.hourSegments,
-      colors: state.colors,
-      timer: { running: !!state.timer.running, sessionAccumulatedMs: state.timer.sessionAccumulatedMs }
-    }
-    localStorage.setItem(STORAGE, JSON.stringify(copy))
-  }catch(e){ console.warn('saveLocal', e) }
-}
+function saveLocal(){ try{ const slim = { hourSegments: state.hourSegments, colors: state.colors, timer: { running: !!state.timer.running, sessionAccumulatedMs: state.timer.sessionAccumulatedMs } }; localStorage.setItem(STORAGE, JSON.stringify(slim)) }catch(e){ console.warn('saveLocal', e) }
 
 /* --------------------------
-   Session persistence helpers (保護)
+   Session persistence helpers
    -------------------------- */
 function saveSessionLocal(session){
   try{
@@ -384,15 +378,7 @@ const fmt = ms => {
 const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 const todayY = ()=> ymd(new Date())
 const timeIn = d => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
-function ensureDay(dayStr){ 
-  if(!state.hourSegments) state.hourSegments = {}
-  if(!state.hourSegments[dayStr]) state.hourSegments[dayStr] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0})))
-  // clamp filledMs safety
-  state.hourSegments[dayStr].forEach(hour => hour.forEach(seg => {
-    seg.filledMs = Math.max(0, Math.min(SEG_MS, Number(seg.filledMs) || 0))
-    if(typeof seg.subject !== 'string') seg.subject = ''
-  }))
-}
+function ensureDay(dayStr){ if(!state.hourSegments[dayStr]) state.hourSegments[dayStr] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0}))) }
 function shade(hex, percent){
   const h = hex.replace('#','')
   const r = parseInt(h.substring(0,2),16)
@@ -493,9 +479,8 @@ function renderCell(dateStr, hour){
   const wrap = document.createElement('div'); wrap.className='segments'
   for(let i=0;i<SEG_H;i++){
     const s = segs[i]
-    // clamp as a safety net
-    const safeFilled = Math.max(0, Math.min(SEG_MS, Number(s.filledMs) || 0))
-    s.filledMs = safeFilled
+    // clamp as safety
+    s.filledMs = Math.max(0, Math.min(SEG_MS, Number(s.filledMs) || 0))
     const segDiv = document.createElement('div'); segDiv.className='segment'
     const fill = document.createElement('div'); fill.className='fill'
     const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS))
@@ -545,16 +530,14 @@ function getSegmentStartMs(ts){
 function allocateDelta(prevMs, nowMs){
   if(!state.timer.running) return
   if(nowMs <= prevMs) return
-  // Guard: if prevMs is null or absurdly old, avoid huge backfill.
-  // We'll set prevMs to Math.max(prevMs, nowMs - 5*60*1000) as conservative fallback
+  // Guard against absurdly old prevMs (avoid huge backfill)
   if(!prevMs || !isFinite(prevMs) || prevMs < (Date.now() - 1000*60*60*24*7)){
-    prevMs = nowMs - 1000 // effectively no backfill
+    prevMs = nowMs - 1000
   }
   let cur = prevMs
   const subject = sel
-  // Prevent infinite loops by limiting iterations
   let safety = 0
-  while(cur < nowMs && safety++ < 10000){
+  while(cur < nowMs && safety++ < 20000){
     const segStart = getSegmentStartMs(cur)
     const segEnd = segStart + SEG_MS
     const addAvailable = Math.min(segEnd, nowMs) - cur
@@ -565,7 +548,7 @@ function allocateDelta(prevMs, nowMs){
     const segIndex = Math.floor(minutesSinceHour / SEG_MIN)
     ensureDay(dateStr)
     const seg = state.hourSegments[dateStr][hour][segIndex]
-    const before = Number(seg.filledMs) || 0
+    const before = seg.filledMs || 0
     const canAdd = Math.min(SEG_MS - before, addAvailable)
     if(canAdd > 0){
       if(!seg.subject) seg.subject = subject
@@ -587,8 +570,7 @@ function tick(){
   scheduleSave()
 }
 function updateElapsedDisplay(){ elapsedLabel.textContent = fmt(state.timer.sessionAccumulatedMs || 0); const dateStr = dateInput.value; ensureDay(dateStr); const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); todayTotalLabel.textContent = fmt(todayMs) }
-function startTimer(){ if(state.timer.running) return; state.timer.running = true; // initialize lastTick to now to avoid backfilling
-  state.timer._lastTick = Date.now(); window._tickI = setInterval(tick, 1000); updateButtonStyles(); saveLocal() }
+function startTimer(){ if(state.timer.running) return; state.timer.running = true; state.timer._lastTick = Date.now(); window._tickI = setInterval(tick, 1000); updateButtonStyles(); saveLocal() }
 function pauseTimer(){ if(!state.timer.running) return; tick(); state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; updateButtonStyles(); saveLocal() }
 function resetTimer(){ if(!confirm('タイマーをリセットします（セッション累積は0に戻ります）。よろしいですか？')) return; state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; state.timer.sessionAccumulatedMs = 0; updateElapsedDisplay(); updateButtonStyles(); saveLocal(); renderAll() }
 function onSetNow(){ startTimeInput.value = timeIn(new Date()) }
@@ -694,7 +676,6 @@ async function loadRemoteFor(uid){
     const { data, error } = await supabase.from('user_hours').select('data').eq('user_id', uid).maybeSingle()
     if(error){ console.warn('loadRemoteFor error', error); return }
     if(data && data.data){
-      // normalize after load to ensure safe structure and clamp values
       state.hourSegments = normalizeHourSegments(data.data)
       saveLocal()
       renderAll()
@@ -937,3 +918,4 @@ dateInput.addEventListener('change', ()=> renderAll())
 </script>
 </body>
 </html>
+
