@@ -342,7 +342,23 @@ function allocateDelta(prevMs, nowMs){ if(nowMs <= prevMs) return; let cur = pre
 function tick(){ const now = Date.now(); const prev = state.timer._lastTick || now; allocateDelta(prev, now); state.timer._lastTick = now; updateElapsedDisplay(); renderAll(); scheduleSave() }
 function updateElapsedDisplay(){ elapsedLabel.textContent = fmt(state.timer.sessionAccumulatedMs || 0); const dateStr = dateInput.value; ensureDay(dateStr); const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); todayTotalLabel.textContent = fmt(todayMs) }
 function startTimer(){ if(state.timer.running) return; state.timer.running = true; state.timer._lastTick = Date.now(); window._tickI = setInterval(tick, 1000); updateButtonStyles(); saveLocal() }
-function pauseTimer(){ if(!state.timer.running) return; tick(); state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; updateButtonStyles(); saveLocal() }
+function pauseTimer(){
+    if(!state.timer.running) return;
+
+    tick();
+
+    // ★ ここで上記で実装した getCurrentUserId() が呼び出される
+    const studyTimeMs = state.timer.sessionAccumulatedMs || 0;
+    const studentId = getCurrentUserId(); 
+    
+    if (studyTimeMs > 0 && studentId) {
+        // sendStudyTime 関数がGASにデータを送信
+        sendStudyTime(studentId, studyTimeMs);
+        
+        // ... (リセット処理など) ...
+    }
+    // ... (タイマー停止処理) ...
+}
 function resetTimer(){ if(!confirm('タイマーをリセットします（セッション累積は0に戻ります）。よろしいですか？')) return; state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; state.timer.sessionAccumulatedMs = 0; updateElapsedDisplay(); updateButtonStyles(); saveLocal(); renderAll() }
 function onSetNow(){ startTimeInput.value = timeIn(new Date()) }
 function updateButtonStyles(){ if(state.timer.running){ startBtn.textContent = '停止'; startBtn.classList.add('running') } else { startBtn.textContent = '開始'; startBtn.classList.remove('running') } }
