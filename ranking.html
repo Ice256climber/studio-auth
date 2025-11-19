@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学習ランキング</title>
+  <style>
+    :root{ --bg:#f6f8fb; --card:#fff; --accent:#4461f2; }
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);margin:0;padding:20px;color:#0f1724}
+    .container{max-width:900px;margin:0 auto}
+    .card{background:var(--card);border-radius:12px;padding:20px;box-shadow:0 10px 30px rgba(16,24,40,0.06);margin-bottom:20px}
+    h1{margin:0 0 20px 0}
+    .tabs{display:flex;gap:10px;margin-bottom:20px}
+    .tab{padding:10px 20px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;cursor:pointer;font-weight:600}
+    .tab.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+    .ranking-list{display:flex;flex-direction:column;gap:12px}
+    .rank-item{display:flex;align-items:center;gap:16px;padding:16px;border-radius:10px;background:linear-gradient(90deg,#fbfbff,#fff);border:1px solid rgba(0,0,0,0.04)}
+    .rank-number{font-size:24px;font-weight:800;color:var(--accent);min-width:50px}
+    .rank-gold{color:#FFD700}
+    .rank-silver{color:#C0C0C0}
+    .rank-bronze{color:#CD7F32}
+    .student-info{flex:1}
+    .student-name{font-weight:700;font-size:16px}
+    .student-id{font-size:13px;color:#6b7280}
+    .time-info{text-align:right}
+    .time-value{font-size:20px;font-weight:800;color:#0f1724}
+    .time-label{font-size:12px;color:#6b7280}
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:20px}
+    .stat-card{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:20px;border-radius:10px}
+    .stat-value{font-size:28px;font-weight:800;margin-bottom:8px}
+    .stat-label{font-size:14px;opacity:0.9}
+    .loading{text-align:center;padding:40px;color:#6b7280}
+    .error{background:#fee;color:#c00;padding:16px;border-radius:8px;margin-bottom:20px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 学習ランキング</h1>
+    
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('weekly')">週間ランキング</button>
+      <button class="tab" onclick="switchTab('daily')">本日ランキング</button>
+      <button class="tab" onclick="switchTab('total')">総合ランキング</button>
+    </div>
+
+    <div id="errorMessage" class="error" style="display:none"></div>
+    
+    <div class="card">
+      <h2 id="rankingTitle">📅 過去7日間の学習時間</h2>
+      <div id="statsGrid" class="stats-grid"></div>
+      <div id="rankingList" class="ranking-list"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+    
+    const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    let currentTab = 'weekly'
+
+    // ユーティリティ関数
+    const fmt = ms => {
+      if(!ms) return '0:00:00'
+      let s = Math.floor(ms/1000)
+      let h = Math.floor(s/3600)
+      s = s % 3600
+      const m = Math.floor(s/60)
+      const sec = s%60
+      return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+    }
+
+    const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+    
+    const lastNDates = (endDateStr, n) => {
+      const [y,m,d] = endDateStr.split('-').map(x=>parseInt(x,10))
+      const end = new Date(y, m-1, d)
+      const arr=[]
+      for(let i=n-1;i>=0;i--){
+        const dd = new Date(end)
+        dd.setDate(end.getDate()-i)
+        arr.push(ymd(dd))
+      }
+      return arr
+    }
+
+    // 統計情報を計算
+    function calculateStats(rankings) {
+      if(!rankings.length) return null
+      
+      const total = rankings.reduce((sum, r) => sum + r.totalMs, 0)
+      const avg = total / rankings.length
+      const max = Math.max(...rankings.map(r => r.totalMs))
+      
+      return {
+        participants: rankings.length,
+        totalHours: (total / 3600000).toFixed(1),
+        avgHours: (avg / 3600000).toFixed(1),
+        maxHours: (max / 3600000).toFixed(1)
+      }
+    }
+
+    // ランキング表示
+    function displayRanking(rankings, stats) {
+      const listEl = document.getElementById('rankingList')
+      const statsEl = document.getElementById('statsGrid')
+      
+      if(!rankings.length) {
+        listEl.innerHTML = '<div class="loading">データがありません</div>'
+        statsEl.innerHTML = ''
+        return
+      }
+
+      // 統計情報
+      if(stats) {
+        statsEl.innerHTML = `
+          <div class="stat-card" style="background:linear-gradient(135deg,#667eea,#764ba2)">
+            <div class="stat-value">${stats.participants}</div>
+            <div class="stat-label">参加者数</div>
+          </div>
+          <div class="stat-card" style="background:linear-gradient(135deg,#f093fb,#f5576c)">
+            <div class="stat-value">${stats.totalHours}h</div>
+            <div class="stat-label">合計学習時間</div>
+          </div>
+          <div class="stat-card" style="background:linear-gradient(135deg,#4facfe,#00f2fe)">
+            <div class="stat-value">${stats.avgHours}h</div>
+            <div class="stat-label">平均学習時間</div>
+          </div>
+        `
+      } else {
+        statsEl.innerHTML = ''
+      }
+
+      // ランキングリスト
+      listEl.innerHTML = rankings.map((item, idx) => {
+        const rank = idx + 1
+        let rankClass = ''
+        let medal = ''
+        if(rank === 1) { rankClass = 'rank-gold'; medal = '🥇' }
+        else if(rank === 2) { rankClass = 'rank-silver'; medal = '🥈' }
+        else if(rank === 3) { rankClass = 'rank-bronze'; medal = '🥉' }
+        
+        return `
+          <div class="rank-item">
+            <div class="rank-number ${rankClass}">${medal || '#' + rank}</div>
+            <div class="student-info">
+              <div class="student-name">${item.email || '匿名ユーザー'}</div>
+              <div class="student-id">${item.user_id.slice(0,8)}...</div>
+            </div>
+            <div class="time-info">
+              <div class="time-value">${fmt(item.totalMs)}</div>
+              <div class="time-label">${(item.totalMs/3600000).toFixed(1)} 時間</div>
+            </div>
+          </div>
+        `
+      }).join('')
+    }
+
+    // 週間ランキング取得
+    async function fetchWeeklyRanking() {
+      try {
+        const today = ymd(new Date())
+        const days = lastNDates(today, 7)
+        
+        // 全ユーザーのデータを取得
+        const { data: allUsers, error: usersError } = await supabase
+          .from('user_hours')
+          .select('user_id, data')
+        
+        if(usersError) throw usersError
+
+        // ユーザーのメール情報を取得
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('user_id, email')
+
+        const emailMap = {}
+        if(profiles) {
+          profiles.forEach(p => emailMap[p.user_id] = p.email)
+        }
+
+        // 各ユーザーの週間合計を計算
+        const rankings = allUsers.map(user => {
+          let totalMs = 0
+          const hourData = user.data || {}
+          
+          days.forEach(day => {
+            if(hourData[day]) {
+              const dayTotal = hourData[day].reduce((sum, hour) => 
+                sum + hour.reduce((s, seg) => s + (seg.filledMs || 0), 0), 0
+              )
+              totalMs += dayTotal
+            }
+          })
+          
+          return {
+            user_id: user.user_id,
+            email: emailMap[user.user_id] || null,
+            totalMs
+          }
+        }).filter(r => r.totalMs > 0)
+        .sort((a, b) => b.totalMs - a.totalMs)
+
+        const stats = calculateStats(rankings)
+        displayRanking(rankings, stats)
+        
+      } catch(error) {
+        console.error('週間ランキング取得エラー:', error)
+        showError('週間ランキングの取得に失敗しました')
+      }
+    }
+
+    // 本日ランキング取得
+    async function fetchDailyRanking() {
+      try {
+        const today = ymd(new Date())
+        
+        const { data: allUsers, error: usersError } = await supabase
+          .from('user_hours')
+          .select('user_id, data')
+        
+        if(usersError) throw usersError
+
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('user_id, email')
+
+        const emailMap = {}
+        if(profiles) {
+          profiles.forEach(p => emailMap[p.user_id] = p.email)
+        }
+
+        const rankings = allUsers.map(user => {
+          let totalMs = 0
+          const hourData = user.data || {}
+          
+          if(hourData[today]) {
+            totalMs = hourData[today].reduce((sum, hour) => 
+              sum + hour.reduce((s, seg) => s + (seg.filledMs || 0), 0), 0
+            )
+          }
+          
+          return {
+            user_id: user.user_id,
+            email: emailMap[user.user_id] || null,
+            totalMs
+          }
+        }).filter(r => r.totalMs > 0)
+        .sort((a, b) => b.totalMs - a.totalMs)
+
+        const stats = calculateStats(rankings)
+        displayRanking(rankings, stats)
+        
+      } catch(error) {
+        console.error('本日ランキング取得エラー:', error)
+        showError('本日ランキングの取得に失敗しました')
+      }
+    }
+
+    // 総合ランキング取得
+    async function fetchTotalRanking() {
+      try {
+        const { data: allUsers, error: usersError } = await supabase
+          .from('user_hours')
+          .select('user_id, data')
+        
+        if(usersError) throw usersError
+
+        const { data: profiles } = await supabase
+          .from('user_profiles')
+          .select('user_id, email')
+
+        const emailMap = {}
+        if(profiles) {
+          profiles.forEach(p => emailMap[p.user_id] = p.email)
+        }
+
+        const rankings = allUsers.map(user => {
+          let totalMs = 0
+          const hourData = user.data || {}
+          
+          Object.keys(hourData).forEach(day => {
+            totalMs += hourData[day].reduce((sum, hour) => 
+              sum + hour.reduce((s, seg) => s + (seg.filledMs || 0), 0), 0
+            )
+          })
+          
+          return {
+            user_id: user.user_id,
+            email: emailMap[user.user_id] || null,
+            totalMs
+          }
+        }).filter(r => r.totalMs > 0)
+        .sort((a, b) => b.totalMs - a.totalMs)
+
+        const stats = calculateStats(rankings)
+        displayRanking(rankings, stats)
+        
+      } catch(error) {
+        console.error('総合ランキング取得エラー:', error)
+        showError('総合ランキングの取得に失敗しました')
+      }
+    }
+
+    function showError(message) {
+      const errorEl = document.getElementById('errorMessage')
+      errorEl.textContent = message
+      errorEl.style.display = 'block'
+      setTimeout(() => errorEl.style.display = 'none', 5000)
+    }
+
+    // タブ切り替え
+    window.switchTab = function(tab) {
+      currentTab = tab
+      
+      // タブUIの更新
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
+      event.target.classList.add('active')
+      
+      // タイトル更新
+      const titles = {
+        weekly: '📅 過去7日間の学習時間',
+        daily: '📆 本日の学習時間',
+        total: '🏆 累計学習時間'
+      }
+      document.getElementById('rankingTitle').textContent = titles[tab]
+      
+      // ローディング表示
+      document.getElementById('rankingList').innerHTML = '<div class="loading">読み込み中...</div>'
+      document.getElementById('statsGrid').innerHTML = ''
+      
+      // データ取得
+      if(tab === 'weekly') fetchWeeklyRanking()
+      else if(tab === 'daily') fetchDailyRanking()
+      else if(tab === 'total') fetchTotalRanking()
+    }
+
+    // 初期表示
+    document.getElementById('rankingList').innerHTML = '<div class="loading">読み込み中...</div>'
+    fetchWeeklyRanking()
+
+    // 30秒ごとに自動更新
+    setInterval(() => {
+      if(currentTab === 'weekly') fetchWeeklyRanking()
+      else if(currentTab === 'daily') fetchDailyRanking()
+      else if(currentTab === 'total') fetchTotalRanking()
+    }, 30000)
+  </script>
+</body>
+</html>
