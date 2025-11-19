@@ -2,7 +2,7 @@
 // 共通設定
 // ==========================================================
 // 1. GASウェブアプリのURLを定数として設定 (POST/GET共通)
-const WEB_APP_URL = 'https://script.google.com/a/macros/gse.okayama-c.ed.jp/s/AKfycbyAUe8PwbhtiHEWpihT9ah2-77aybvprKDTtdENGzANEaE-nSHU-c6pQIkNWYyNDEgaww/exec'; 
+const WEB_APP_URL = 'https://script.google.com/a/macros/gse.okayama-c.ed.jp/s/AKfycbwUcpnTj0m4OmgBRs0LMMxhCyR-_yDV9HtfjPlQGMw6ddHcxPj5u0Lha9TY4oM-f4pUgQ/exec'; 
 
 // ランキング表示用のコンテナ要素を定義 (HTMLの <div id="ranking-list"> を参照)
 const rankingContainer = document.getElementById('ranking-list');
