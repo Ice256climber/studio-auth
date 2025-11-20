@@ -672,7 +672,55 @@ dateInput.addEventListener('change', ()=> renderAll())
 
 /* End of script */
 </script>
-  <script src="study_tracker.js"></script>
+  <script>
+// getCurrentUserId 関数
+function getCurrentUserId() {
+    try {
+        const sessionData = localStorage.getItem('supabase_session_v2');
+        if (!sessionData) {
+            console.warn('⚠️ Supabaseセッションが見つかりません');
+            return null;
+        }
+        
+        const session = JSON.parse(sessionData);
+        return session?.user?.id || null;
+        
+    } catch (e) {
+        console.error("❌ Supabaseセッションから生徒IDの取得に失敗:", e);
+        return null;
+    }
+}
+
+// 学習記録をSupabaseに保存
+async function saveStudyRecordToSupabase(userId, studyTimeMs) {
+    try {
+        const now = new Date();
+        const dateStr = ymd(now);
+        
+        const { data, error } = await window.supabase
+            .from('study_records')
+            .insert([
+                {
+                    user_id: userId,
+                    study_date: dateStr,
+                    study_time_ms: studyTimeMs,
+                    recorded_at: now.toISOString()
+                }
+            ]);
+        
+        if (error) {
+            console.error('❌ Supabase保存エラー:', error);
+        } else {
+            console.log('✅ Supabase学習記録保存成功:', {
+                date: dateStr,
+                time: fmt(studyTimeMs)
+            });
+        }
+    } catch (e) {
+        console.error('❌ 学習記録保存例外:', e);
+    }
+}
+</script>
 </body>
 </html>
 
