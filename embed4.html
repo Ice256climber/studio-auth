@@ -349,68 +349,40 @@ function allocateDelta(prevMs, nowMs){ if(nowMs <= prevMs) return; let cur = pre
 function tick(){ const now = Date.now(); const prev = state.timer._lastTick || now; allocateDelta(prev, now); state.timer._lastTick = now; updateElapsedDisplay(); renderAll(); scheduleSave() }
 function updateElapsedDisplay(){ elapsedLabel.textContent = fmt(state.timer.sessionAccumulatedMs || 0); const dateStr = dateInput.value; ensureDay(dateStr); const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); todayTotalLabel.textContent = fmt(todayMs) }
 function startTimer(){ if(state.timer.running) return; state.timer.running = true; state.timer._lastTick = Date.now(); window._tickI = setInterval(tick, 1000); updateButtonStyles(); saveLocal() }
-// HTMLファイル内の pauseTimer() 関数を以下に置き換えてください
-
-// embed4.htmlの pauseTimer 関数を以下に置き換えてください
-// （357行目あたり）
-
-/* --- 修正版 pauseTimer --- */
+// タイマー停止ボタンを押したときの処理（UI即時更新版）
 async function pauseTimer(){
     if(!state.timer.running) return;
 
-    // 1. タイマーを止める
-    tick();
+    // 1. まずタイマーを止めて、UIを即座に「開始」に戻す
+    tick(); 
     state.timer.running = false;
     clearInterval(window._tickI);
 
-    // 2. 勉強時間を取得
-    const studyTimeMs = state.timer.sessionAccumulatedMs || 0;
-
-    // --- Supabase保存処理ここから ---
-    // ログインユーザーを確認
-    const { data: { user } } = await supabase.auth.getUser();
-
-    // 1秒以上記録があり、かつログインしていれば保存
-    if (studyTimeMs > 1000 && user) {
-        try {
-            const now = new Date();
-            const dateStr = ymd(now); // 既存のymd関数を利用
-
-            // データベースへ送信
-            const { error } = await supabase
-                .from('study_records')
-                .insert([{
-                    user_id: user.id,
-                    study_date: dateStr,
-                    study_time_ms: studyTimeMs,
-                    recorded_at: now.toISOString()
-                }]);
-
-            if (error) {
-                console.error('❌ 保存エラー:', error);
-                alert('保存に失敗しました: ' + error.message);
-            } else {
-                console.log('✅ 保存成功:', studyTimeMs);
-                alert(`お疲れ様でした！\n今回の勉強時間: ${fmt(studyTimeMs)} を記録しました。`);
-            }
-        } catch (e) {
-            console.error('保存処理の例外:', e);
-        }
-    } else if (!user) {
-        console.warn('未ログインのため保存しません');
-        // 必要であればコメントアウトを外してください
-        // alert('ログインしていないため、記録は保存されませんでした。');
-    }
-    // --- Supabase保存処理ここまで ---
-
-    // 3. 画面のリセット処理（既存のコード）
-    state.timer.sessionAccumulatedMs = 0;
+    // 画面のリセット処理を先に実行（これでボタンがすぐ戻ります）
     state.timer._lastTick = null;
     updateElapsedDisplay();
-    updateButtonStyles();
-    saveLocal();
-    scheduleSave();
+    updateButtonStyles(); // ★これがボタンをStartに戻す処理
     renderAll();
+
+    // 2. 記録する時間を取得
+    const studyTimeMs = state.timer.sessionAccumulatedMs || 0;
+    
+    // 内部の蓄積時間をリセット（次回のために）
+    state.timer.sessionAccumulatedMs = 0;
+    saveLocal();
+    scheduleSave(); 
+
+    // 3. 裏でSupabaseに保存する（ここから非同期処理）
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // 1秒以上かつログイン済みなら保存
+    if (studyTimeMs > 1000 && user) {
+        console.log('クラウド保存を開始します...');
+        saveStudyRecordToSupabase(user.id, studyTimeMs); // awaitを外して裏で実行させてもOKですが、エラー通知のため関数内で処理完結させます
+    } else if (!user) {
+        console.warn('未ログインのため保存しません');
+        // alert('ログインしていないため、記録は保存されませんでした。');
+    }
 }
 function resetTimer(){ if(!confirm('タイマーをリセットします（セッション累積は0に戻ります）。よろしいですか？')) return; state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; state.timer.sessionAccumulatedMs = 0; updateElapsedDisplay(); updateButtonStyles(); saveLocal(); renderAll() }
 function onSetNow(){ startTimeInput.value = timeIn(new Date()) }
