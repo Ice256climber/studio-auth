@@ -347,17 +347,13 @@ function startTimer(){ if(state.timer.running) return; state.timer.running = tru
 // embed4.htmlの pauseTimer 関数を以下に置き換えてください
 // （357行目あたり）
 
-function pauseTimer(){
+async function pauseTimer(){
     if(!state.timer.running) return;
 
-    // 最後のtickを実行してデータを確定
     tick();
-
-    // タイマーを停止
     state.timer.running = false;
     clearInterval(window._tickI);
 
-    // 勉強時間とユーザーIDを取得
     const studyTimeMs = state.timer.sessionAccumulatedMs || 0;
     const studentId = getCurrentUserId(); 
     
@@ -366,81 +362,25 @@ function pauseTimer(){
     console.log('生徒ID:', studentId);
     console.log('送信可否:', studyTimeMs > 0 && studentId);
     
-    // ★ GASではなく、Supabaseに直接保存する処理を追加
     if (studyTimeMs > 0 && studentId) {
         console.log('✅ Supabaseへ学習記録を保存中...');
-        saveStudyRecordToSupabase(studentId, studyTimeMs);
+        try {
+            await saveStudyRecordToSupabase(studentId, studyTimeMs);
+        } catch(e) {
+            console.error('❌ 保存関数呼び出しエラー:', e);
+        }
     } else {
-        console.warn('⚠️ データ送信スキップ: 勉強時間が0、またはユーザーIDが未取得');
+        console.warn('⚠️ データ送信スキップ');
     }
 
-    // セッション累積時間をリセット（次回開始時は0から）
     state.timer.sessionAccumulatedMs = 0;
     state.timer._lastTick = null;
-
-    // UI更新
     updateElapsedDisplay();
     updateButtonStyles();
-    
-    // ローカル＆リモート保存（既存のSupabase保存）
     saveLocal();
-    scheduleSave(); // これで hourSegments が保存される
-    
+    scheduleSave();
     renderAll();
-    
     console.log('=== pauseTimer 完了 ===');
-}
-
-// ★ 新しい関数：学習記録をSupabaseに保存
-async function saveStudyRecordToSupabase(userId, studyTimeMs) {
-    try {
-        const now = new Date();
-        const dateStr = ymd(now); // 例: "2025-11-20"
-        
-        // study_records テーブルに記録を追加
-        const { data, error } = await window.supabase
-            .from('study_records')
-            .insert([
-                {
-                    user_id: userId,
-                    study_date: dateStr,
-                    study_time_ms: studyTimeMs,
-                    recorded_at: now.toISOString()
-                }
-            ]);
-        
-        if (error) {
-            console.error('❌ Supabase保存エラー:', error);
-            // エラーでも処理は続行（hourSegmentsは既に保存されている）
-        } else {
-            console.log('✅ Supabase学習記録保存成功:', {
-                date: dateStr,
-                time: fmt(studyTimeMs)
-            });
-        }
-    } catch (e) {
-        console.error('❌ 学習記録保存例外:', e);
-    }
-}
-
-// getCurrentUserId 関数（既存のものを確認、なければ追加）
-function getCurrentUserId() {
-    try {
-        const sessionData = localStorage.getItem('supabase_session_v2');
-        if (!sessionData) {
-            console.warn('⚠️ Supabaseセッションが見つかりません');
-            return null;
-        }
-        
-        const session = JSON.parse(sessionData);
-        const userId = session?.user?.id || null;
-        
-        return userId;
-        
-    } catch (e) {
-        console.error("❌ Supabaseセッションから生徒IDの取得に失敗:", e);
-        return null;
-    }
 }
 function resetTimer(){ if(!confirm('タイマーをリセットします（セッション累積は0に戻ります）。よろしいですか？')) return; state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; state.timer.sessionAccumulatedMs = 0; updateElapsedDisplay(); updateButtonStyles(); saveLocal(); renderAll() }
 function onSetNow(){ startTimeInput.value = timeIn(new Date()) }
