@@ -34,7 +34,6 @@
     .stat-label{font-size:14px;opacity:0.9}
     .loading{text-align:center;padding:40px;color:#6b7280}
     .error{background:#fee;color:#c00;padding:16px;border-radius:8px;margin-bottom:20px}
-    .debug-info{background:#f0f0f0;padding:12px;border-radius:8px;font-size:12px;margin-top:20px;font-family:monospace}
     .last-updated{font-size:13px;color:#6b7280;margin-top:10px}
   </style>
 </head>
@@ -58,11 +57,6 @@
       <div class="last-updated" id="lastUpdated">最終更新: 読み込み中...</div>
       <div id="statsGrid" class="stats-grid"></div>
       <div id="rankingList" class="ranking-list"></div>
-      
-      <details style="margin-top:20px">
-        <summary style="cursor:pointer;font-weight:600">🔍 デバッグ情報を表示</summary>
-        <div id="debugInfo" class="debug-info">読み込み中...</div>
-      </details>
     </div>
   </div>
 
@@ -72,11 +66,10 @@
     const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
     const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    window.supabase = supabase
 
     let currentTab = 'weekly'
-    let debugData = {}
 
-    // ユーティリティ関数
     const fmt = ms => {
       if(!ms) return '0:00:00'
       let s = Math.floor(ms/1000)
@@ -88,33 +81,7 @@
     }
 
     const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-    
-    const lastNDates = (endDateStr, n) => {
-      const [y,m,d] = endDateStr.split('-').map(x=>parseInt(x,10))
-      const end = new Date(y, m-1, d)
-      const arr=[]
-      for(let i=n-1;i>=0;i--){
-        const dd = new Date(end)
-        dd.setDate(end.getDate()-i)
-        arr.push(ymd(dd))
-      }
-      return arr
-    }
 
-    // デバッグ情報を表示
-    function updateDebugInfo() {
-      const debugEl = document.getElementById('debugInfo')
-      debugEl.innerHTML = `
-        <strong>現在時刻:</strong> ${new Date().toLocaleString('ja-JP')}<br>
-        <strong>対象日付:</strong> ${debugData.targetDates?.join(', ') || '未取得'}<br>
-        <strong>取得ユーザー数:</strong> ${debugData.userCount || 0}<br>
-        <strong>データありユーザー数:</strong> ${debugData.validUserCount || 0}<br>
-        <strong>データ例:</strong><br>
-        <pre style="margin-top:8px;overflow:auto">${JSON.stringify(debugData.sample, null, 2)}</pre>
-      `
-    }
-
-    // 統計情報を計算
     function calculateStats(rankings) {
       if(!rankings.length) return null
       
@@ -130,12 +97,10 @@
       }
     }
 
-    // ランキング表示
     function displayRanking(rankings, stats) {
       const listEl = document.getElementById('rankingList')
       const statsEl = document.getElementById('statsGrid')
       
-      // 最終更新時刻
       document.getElementById('lastUpdated').textContent = 
         `最終更新: ${new Date().toLocaleTimeString('ja-JP')}`
       
@@ -145,7 +110,6 @@
         return
       }
 
-      // 統計情報
       if(stats) {
         statsEl.innerHTML = `
           <div class="stat-card" style="background:linear-gradient(135deg,#667eea,#764ba2)">
@@ -165,7 +129,6 @@
         statsEl.innerHTML = ''
       }
 
-      // ランキングリスト
       listEl.innerHTML = rankings.map((item, idx) => {
         const rank = idx + 1
         let rankClass = ''
@@ -178,8 +141,8 @@
           <div class="rank-item">
             <div class="rank-number ${rankClass}">${medal || '#' + rank}</div>
             <div class="student-info">
-              <div class="student-name">${item.email || '匿名ユーザー'}</div>
-              <div class="student-id">ID: ${item.user_id.slice(0,8)}...</div>
+              <div class="student-name">ユーザー ${item.user_id.slice(0,8)}</div>
+              <div class="student-id">${item.recordCount}回の学習記録</div>
             </div>
             <div class="time-info">
               <div class="time-value">${fmt(item.totalMs)}</div>
@@ -190,137 +153,88 @@
       }).join('')
     }
 
-    // 週間ランキング取得
     async function fetchWeeklyRanking() {
       try {
-        const today = ymd(new Date())
-        const days = lastNDates(today, 7)
+        const today = new Date()
+        const sevenDaysAgo = new Date(today)
+        sevenDaysAgo.setDate(today.getDate() - 6)
         
-        debugData.targetDates = days
+        const startDate = ymd(sevenDaysAgo)
+        const endDate = ymd(today)
         
-        console.log('📅 週間ランキング取得開始')
-        console.log('対象日付:', days)
+        console.log('📅 週間ランキング取得:', startDate, '~', endDate)
         
-        // Supabaseから全ユーザーのデータを取得
-        const { data: allUsers, error: usersError } = await supabase
-          .from('user_hours')
-          .select('user_id, data')
+        const { data, error } = await supabase
+          .from('study_records')
+          .select('user_id, study_time_ms')
+          .gte('study_date', startDate)
+          .lte('study_date', endDate)
         
-        if(usersError) throw usersError
-
-        console.log('✅ 取得ユーザー数:', allUsers?.length || 0)
-        debugData.userCount = allUsers?.length || 0
-
-        // user_profilesテーブルが存在しない場合はスキップ
-        const emailMap = {}
-        try {
-          const { data: profiles } = await supabase
-            .from('user_profiles')
-            .select('user_id, email, role')
-          
-          if(profiles) {
-            profiles.forEach(p => emailMap[p.user_id] = p.email)
+        if(error) throw error
+        
+        console.log('✅ 取得レコード数:', data?.length || 0)
+        
+        // ユーザーごとに集計
+        const userTotals = {}
+        data.forEach(record => {
+          if(!userTotals[record.user_id]) {
+            userTotals[record.user_id] = { totalMs: 0, recordCount: 0 }
           }
-        } catch(e) {
-          console.warn('user_profilesテーブルが見つかりません（メール表示なし）')
-        }
-
-        // 各ユーザーの週間合計を計算
-        const rankings = allUsers.map(user => {
-          let totalMs = 0
-          const hourData = user.data || {}
-          
-          console.log(`👤 ユーザー ${user.user_id.slice(0,8)}: データキー数 ${Object.keys(hourData).length}`)
-          
-          days.forEach(day => {
-            if(hourData[day]) {
-              const dayTotal = hourData[day].reduce((sum, hour) => 
-                sum + hour.reduce((s, seg) => s + (seg.filledMs || 0), 0), 0
-              )
-              totalMs += dayTotal
-              console.log(`  ${day}: ${fmt(dayTotal)}`)
-            }
-          })
-          
-          return {
-            user_id: user.user_id,
-            email: emailMap[user.user_id] || null,
-            totalMs
-          }
-        }).filter(r => r.totalMs > 0)
-        .sort((a, b) => b.totalMs - a.totalMs)
-
+          userTotals[record.user_id].totalMs += record.study_time_ms
+          userTotals[record.user_id].recordCount++
+        })
+        
+        const rankings = Object.entries(userTotals)
+          .map(([user_id, stats]) => ({
+            user_id,
+            totalMs: stats.totalMs,
+            recordCount: stats.recordCount
+          }))
+          .sort((a, b) => b.totalMs - a.totalMs)
+        
         console.log('📊 ランキング結果:', rankings.length, '人')
         
-        debugData.validUserCount = rankings.length
-        debugData.sample = rankings.slice(0, 2)
-        
-        updateDebugInfo()
-
         const stats = calculateStats(rankings)
         displayRanking(rankings, stats)
         
       } catch(error) {
         console.error('❌ 週間ランキング取得エラー:', error)
         showError('週間ランキングの取得に失敗しました: ' + error.message)
-        debugData.error = error.message
-        updateDebugInfo()
       }
     }
 
-    // 本日ランキング取得
     async function fetchDailyRanking() {
       try {
         const today = ymd(new Date())
         
-        debugData.targetDates = [today]
+        console.log('📆 本日ランキング取得:', today)
         
-        console.log('📆 本日ランキング取得開始:', today)
+        const { data, error } = await supabase
+          .from('study_records')
+          .select('user_id, study_time_ms')
+          .eq('study_date', today)
         
-        const { data: allUsers, error: usersError } = await supabase
-          .from('user_hours')
-          .select('user_id, data')
+        if(error) throw error
         
-        if(usersError) throw usersError
-
-        debugData.userCount = allUsers?.length || 0
-
-        const emailMap = {}
-        try {
-          const { data: profiles } = await supabase
-            .from('user_profiles')
-            .select('user_id, email')
-          
-          if(profiles) {
-            profiles.forEach(p => emailMap[p.user_id] = p.email)
+        console.log('✅ 取得レコード数:', data?.length || 0)
+        
+        const userTotals = {}
+        data.forEach(record => {
+          if(!userTotals[record.user_id]) {
+            userTotals[record.user_id] = { totalMs: 0, recordCount: 0 }
           }
-        } catch(e) {
-          console.warn('user_profilesテーブルが見つかりません（メール表示なし）')
-        }
-
-        const rankings = allUsers.map(user => {
-          let totalMs = 0
-          const hourData = user.data || {}
-          
-          if(hourData[today]) {
-            totalMs = hourData[today].reduce((sum, hour) => 
-              sum + hour.reduce((s, seg) => s + (seg.filledMs || 0), 0), 0
-            )
-            console.log(`👤 ${user.user_id.slice(0,8)}: 本日 ${fmt(totalMs)}`)
-          }
-          
-          return {
-            user_id: user.user_id,
-            email: emailMap[user.user_id] || null,
-            totalMs
-          }
-        }).filter(r => r.totalMs > 0)
-        .sort((a, b) => b.totalMs - a.totalMs)
-
-        debugData.validUserCount = rankings.length
-        debugData.sample = rankings.slice(0, 2)
-        updateDebugInfo()
-
+          userTotals[record.user_id].totalMs += record.study_time_ms
+          userTotals[record.user_id].recordCount++
+        })
+        
+        const rankings = Object.entries(userTotals)
+          .map(([user_id, stats]) => ({
+            user_id,
+            totalMs: stats.totalMs,
+            recordCount: stats.recordCount
+          }))
+          .sort((a, b) => b.totalMs - a.totalMs)
+        
         const stats = calculateStats(rankings)
         displayRanking(rankings, stats)
         
@@ -330,57 +244,35 @@
       }
     }
 
-    // 総合ランキング取得
     async function fetchTotalRanking() {
       try {
-        console.log('🏆 総合ランキング取得開始')
+        console.log('🏆 総合ランキング取得')
         
-        const { data: allUsers, error: usersError } = await supabase
-          .from('user_hours')
-          .select('user_id, data')
+        const { data, error } = await supabase
+          .from('study_records')
+          .select('user_id, study_time_ms')
         
-        if(usersError) throw usersError
-
-        debugData.userCount = allUsers?.length || 0
-
-        const emailMap = {}
-        try {
-          const { data: profiles } = await supabase
-            .from('user_profiles')
-            .select('user_id, email')
-          
-          if(profiles) {
-            profiles.forEach(p => emailMap[p.user_id] = p.email)
+        if(error) throw error
+        
+        console.log('✅ 取得レコード数:', data?.length || 0)
+        
+        const userTotals = {}
+        data.forEach(record => {
+          if(!userTotals[record.user_id]) {
+            userTotals[record.user_id] = { totalMs: 0, recordCount: 0 }
           }
-        } catch(e) {
-          console.warn('user_profilesテーブルが見つかりません（メール表示なし）')
-        }
-
-        const rankings = allUsers.map(user => {
-          let totalMs = 0
-          const hourData = user.data || {}
-          
-          const allDays = Object.keys(hourData)
-          debugData.targetDates = allDays
-          
-          allDays.forEach(day => {
-            totalMs += hourData[day].reduce((sum, hour) => 
-              sum + hour.reduce((s, seg) => s + (seg.filledMs || 0), 0), 0
-            )
-          })
-          
-          return {
-            user_id: user.user_id,
-            email: emailMap[user.user_id] || null,
-            totalMs
-          }
-        }).filter(r => r.totalMs > 0)
-        .sort((a, b) => b.totalMs - a.totalMs)
-
-        debugData.validUserCount = rankings.length
-        debugData.sample = rankings.slice(0, 2)
-        updateDebugInfo()
-
+          userTotals[record.user_id].totalMs += record.study_time_ms
+          userTotals[record.user_id].recordCount++
+        })
+        
+        const rankings = Object.entries(userTotals)
+          .map(([user_id, stats]) => ({
+            user_id,
+            totalMs: stats.totalMs,
+            recordCount: stats.recordCount
+          }))
+          .sort((a, b) => b.totalMs - a.totalMs)
+        
         const stats = calculateStats(rankings)
         displayRanking(rankings, stats)
         
@@ -397,15 +289,12 @@
       setTimeout(() => errorEl.style.display = 'none', 8000)
     }
 
-    // タブ切り替え
     window.switchTab = function(tab) {
       currentTab = tab
       
-      // タブUIの更新
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'))
       event.target.classList.add('active')
       
-      // タイトル更新
       const titles = {
         weekly: '📅 過去7日間の学習時間',
         daily: '📆 本日の学習時間',
@@ -413,17 +302,14 @@
       }
       document.getElementById('rankingTitle').textContent = titles[tab]
       
-      // ローディング表示
       document.getElementById('rankingList').innerHTML = '<div class="loading">⏳ 読み込み中...</div>'
       document.getElementById('statsGrid').innerHTML = ''
       
-      // データ取得
       if(tab === 'weekly') fetchWeeklyRanking()
       else if(tab === 'daily') fetchDailyRanking()
       else if(tab === 'total') fetchTotalRanking()
     }
 
-    // 手動更新
     window.manualRefresh = function() {
       console.log('🔄 手動更新実行')
       if(currentTab === 'weekly') fetchWeeklyRanking()
@@ -431,11 +317,9 @@
       else if(currentTab === 'total') fetchTotalRanking()
     }
 
-    // 初期表示
     document.getElementById('rankingList').innerHTML = '<div class="loading">⏳ 読み込み中...</div>'
     fetchWeeklyRanking()
 
-    // 自動更新は停止（手動更新ボタンを使用）
     console.log('✅ ランキングシステム起動完了')
   </script>
 </body>
