@@ -354,32 +354,56 @@ function startTimer(){ if(state.timer.running) return; state.timer.running = tru
 // embed4.htmlの pauseTimer 関数を以下に置き換えてください
 // （357行目あたり）
 
+/* --- 修正版 pauseTimer --- */
 async function pauseTimer(){
     if(!state.timer.running) return;
 
+    // 1. タイマーを止める
     tick();
     state.timer.running = false;
     clearInterval(window._tickI);
 
+    // 2. 勉強時間を取得
     const studyTimeMs = state.timer.sessionAccumulatedMs || 0;
-    const studentId = getCurrentUserId(); 
-    
-    console.log('=== pauseTimer デバッグ情報 ===');
-    console.log('勉強時間(ms):', studyTimeMs);
-    console.log('生徒ID:', studentId);
-    console.log('送信可否:', studyTimeMs > 0 && studentId);
-    
-    if (studyTimeMs > 0 && studentId) {
-        console.log('✅ Supabaseへ学習記録を保存中...');
-        try {
-            await saveStudyRecordToSupabase(studentId, studyTimeMs);
-        } catch(e) {
-            console.error('❌ 保存関数呼び出しエラー:', e);
-        }
-    } else {
-        console.warn('⚠️ データ送信スキップ');
-    }
 
+    // --- Supabase保存処理ここから ---
+    // ログインユーザーを確認
+    const { data: { user } } = await supabase.auth.getUser();
+
+    // 1秒以上記録があり、かつログインしていれば保存
+    if (studyTimeMs > 1000 && user) {
+        try {
+            const now = new Date();
+            const dateStr = ymd(now); // 既存のymd関数を利用
+
+            // データベースへ送信
+            const { error } = await supabase
+                .from('study_records')
+                .insert([{
+                    user_id: user.id,
+                    study_date: dateStr,
+                    study_time_ms: studyTimeMs,
+                    recorded_at: now.toISOString()
+                }]);
+
+            if (error) {
+                console.error('❌ 保存エラー:', error);
+                alert('保存に失敗しました: ' + error.message);
+            } else {
+                console.log('✅ 保存成功:', studyTimeMs);
+                alert(`お疲れ様でした！\n今回の勉強時間: ${fmt(studyTimeMs)} を記録しました。`);
+            }
+        } catch (e) {
+            console.error('保存処理の例外:', e);
+        }
+    } else if (!user) {
+        console.warn('未ログインのため保存しません');
+        // 必要であればコメントアウトを外してください
+        // alert('ログインしていないため、記録は保存されませんでした。');
+    }
+    // --- Supabase保存処理ここまで ---
+
+    // 3. 画面のリセット処理（既存のコード）
     state.timer.sessionAccumulatedMs = 0;
     state.timer._lastTick = null;
     updateElapsedDisplay();
@@ -387,7 +411,6 @@ async function pauseTimer(){
     saveLocal();
     scheduleSave();
     renderAll();
-    console.log('=== pauseTimer 完了 ===');
 }
 function resetTimer(){ if(!confirm('タイマーをリセットします（セッション累積は0に戻ります）。よろしいですか？')) return; state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; state.timer.sessionAccumulatedMs = 0; updateElapsedDisplay(); updateButtonStyles(); saveLocal(); renderAll() }
 function onSetNow(){ startTimeInput.value = timeIn(new Date()) }
