@@ -9,11 +9,22 @@
 </style>
 
 <script type="module">
+// ▼▼▼ 追加ここから ▼▼▼
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+
+// ここで supabase を作ります（これでブラウザのログイン情報を読み取れるようになります）
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+window.supabase = supabase // 他の場所でも使えるように登録
+// ▲▲▲ 追加ここまで ▲▲▲
+
+
 /* supabase client が既に window.supabase にあることを前提。
    もしない場合は最上部で createClient するコードを追加してください。 */
 
 const TARGET_ORIGIN = location.origin || '*'
-
 // utility: send message to parent
 function postToParent(msg){
   try{ window.parent.postMessage(msg, TARGET_ORIGIN) }catch(e){ try{ window.parent.postMessage(msg, '*') }catch(e2){ console.warn('postToParent failed', e2) } }
