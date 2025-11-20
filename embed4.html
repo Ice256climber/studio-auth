@@ -343,72 +343,44 @@ function tick(){ const now = Date.now(); const prev = state.timer._lastTick || n
 function updateElapsedDisplay(){ elapsedLabel.textContent = fmt(state.timer.sessionAccumulatedMs || 0); const dateStr = dateInput.value; ensureDay(dateStr); const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0); todayTotalLabel.textContent = fmt(todayMs) }
 function startTimer(){ if(state.timer.running) return; state.timer.running = true; state.timer._lastTick = Date.now(); window._tickI = setInterval(tick, 1000); updateButtonStyles(); saveLocal() }
 // HTMLファイル内の pauseTimer() 関数を以下に置き換えてください
-/* -------------------------------------------------------
-   修正版: タイマー停止 & Supabase保存処理
-   ここを既存の pauseTimer の場所に上書きしてください
-   ------------------------------------------------------- */
 
-// 学習記録をSupabaseに保存する関数
-async function saveStudyRecordToSupabase(userId, studyTimeMs) {
-  try {
-    const now = new Date();
-    const dateStr = ymd(now); // 既存のヘルパー関数を使用
+// embed4.htmlの pauseTimer 関数を以下に置き換えてください
+// （357行目あたり）
 
-    const { error } = await supabase
-        .from('study_records') // テーブル名
-        .insert([
-            {
-                user_id: userId,
-                study_date: dateStr,          // 日付 (2023-10-xx)
-                study_time_ms: studyTimeMs,   // ★ここを修正しました
-                recorded_at: now.toISOString() // ★ここを修正しました
-            }
-        ]);
-    
-    if (error) {
-        console.error('❌ Supabase保存エラー:', error);
-        alert('保存に失敗しました: ' + error.message);
-    } else {
-        console.log('✅ 保存成功:', { date: dateStr, ms: studyTimeMs });
-        // ユーザーに保存できたことを伝える
-        alert(`お疲れ様でした！\n今回の勉強時間: ${fmt(studyTimeMs)} を記録しました。`);
-    }
-  } catch (e) {
-    console.error('❌ 保存処理の例外:', e);
-  }
-}
-
-// タイマー停止ボタンを押したときの処理
 async function pauseTimer(){
     if(!state.timer.running) return;
 
-    // 1. タイマーを止める
-    tick(); 
+    tick();
     state.timer.running = false;
     clearInterval(window._tickI);
 
-    // 2. 時間を取得
     const studyTimeMs = state.timer.sessionAccumulatedMs || 0;
+    const studentId = getCurrentUserId(); 
     
-    // 3. ログインユーザー情報を取得 (重要)
-    const { data: { user } } = await supabase.auth.getUser();
+    console.log('=== pauseTimer デバッグ情報 ===');
+    console.log('勉強時間(ms):', studyTimeMs);
+    console.log('生徒ID:', studentId);
+    console.log('送信可否:', studyTimeMs > 0 && studentId);
     
-    // 4. 保存判定 (時間が0より多く、かつログインしている場合)
-    if (studyTimeMs > 1000 && user) { 
-        // 1秒以上なら保存実行
-        await saveStudyRecordToSupabase(user.id, studyTimeMs);
-    } else if (!user) {
-        alert('ログインしていないため、記録は保存されませんでした。');
+    if (studyTimeMs > 0 && studentId) {
+        console.log('✅ Supabaseへ学習記録を保存中...');
+        try {
+            await saveStudyRecordToSupabase(studentId, studyTimeMs);
+        } catch(e) {
+            console.error('❌ 保存関数呼び出しエラー:', e);
+        }
+    } else {
+        console.warn('⚠️ データ送信スキップ');
     }
 
-    // 5. タイマーのリセット処理 (画面上の表示を戻す)
     state.timer.sessionAccumulatedMs = 0;
     state.timer._lastTick = null;
     updateElapsedDisplay();
     updateButtonStyles();
     saveLocal();
-    scheduleSave(); 
+    scheduleSave();
     renderAll();
+    console.log('=== pauseTimer 完了 ===');
 }
 function resetTimer(){ if(!confirm('タイマーをリセットします（セッション累積は0に戻ります）。よろしいですか？')) return; state.timer.running = false; clearInterval(window._tickI); state.timer._lastTick = null; state.timer.sessionAccumulatedMs = 0; updateElapsedDisplay(); updateButtonStyles(); saveLocal(); renderAll() }
 function onSetNow(){ startTimeInput.value = timeIn(new Date()) }
@@ -601,6 +573,93 @@ function sanitizeFutureSegments(dateStr){
   }catch(e){ console.warn('sanitizeFutureSegments', e) }
 }
 
+/* --------------------------
+   Init
+   -------------------------- */
+(async function init(){
+  loadLocal()
+  if(!dateInput.value) dateInput.value = todayY()
+  if(!startTimeInput.value) startTimeInput.value = timeIn(new Date())
+  buildPalette()
+  buildGrid()
+  renderAll()
+  renderAuthUI(null)
+
+  await restoreSessionLocalIfNeeded()
+
+  try{
+    const { data } = await supabase.auth.getSession()
+    const session = data?.session
+    if(session && session.user){
+      const role = await fetchRoleForUser(session.user.id)
+      renderAuthUI(session.user.email, role)
+      authStatus.textContent = `ログイン: ${session.user.email}`
+      await loadRemoteFor(session.user.id)
+    } else {
+      authStatus.textContent = '未ログイン（ローカル保存）'
+    }
+  }catch(e){ console.warn('session check', e); authStatus.textContent = '認証チェック失敗' }
+})()
+
+/* --------------------------
+   Bindings
+   -------------------------- */
+startBtn.addEventListener('click', ()=> state.timer.running ? pauseTimer() : startTimer())
+pauseBtn.addEventListener('click', pauseTimer)
+resetBtn.addEventListener('click', resetTimer)
+setNowBtn.addEventListener('click', onSetNow)
+dateInput.addEventListener('change', ()=> renderAll())
+
+/* End of script */
+</script>
+  <script>
+// getCurrentUserId 関数
+function getCurrentUserId() {
+    try {
+        const sessionData = localStorage.getItem('supabase_session_v2');
+        if (!sessionData) {
+            console.warn('⚠️ Supabaseセッションが見つかりません');
+            return null;
+        }
+        
+        const session = JSON.parse(sessionData);
+        return session?.user?.id || null;
+        
+    } catch (e) {
+        console.error("❌ Supabaseセッションから生徒IDの取得に失敗:", e);
+        return null;
+    }
+}
+
+// 学習記録をSupabaseに保存
+async function saveStudyRecordToSupabase(userId, studyTimeMs) {
+    try {
+        const now = new Date();
+        const dateStr = ymd(now);
+        
+        const { data, error } = await window.supabase
+            .from('study_records')
+            .insert([
+                {
+                    user_id: userId,
+                    study_date: dateStr,
+                    study_time_ms: studyTimeMs,
+                    recorded_at: now.toISOString()
+                }
+            ]);
+        
+        if (error) {
+            console.error('❌ Supabase保存エラー:', error);
+        } else {
+            console.log('✅ Supabase学習記録保存成功:', {
+                date: dateStr,
+                time: fmt(studyTimeMs)
+            });
+        }
+    } catch (e) {
+        console.error('❌ 学習記録保存例外:', e);
+    }
+}
 </script>
 </body>
 </html>
