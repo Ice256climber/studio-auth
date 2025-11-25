@@ -243,8 +243,15 @@
 
         // ▼ 今回のロジック: 「一番学習時間が長い人」を「ログイン中のあなた」と仮定する
         // （実際のアプリでは auth.user().id などで判定します）
-        userList.sort((a, b) => b.totalMs - a.totalMs)
-        const myData = userList.length > 0 ? userList[0] : null
+        const { data: { user } } = await sb.auth.getuser();
+
+        const mydata = user
+          ? userList.find(u => u.user_id === user.id) || null
+          : null;
+
+        if (!mydata) {
+          console.warn("ログインユーザのデータがありません");
+        }
         
         // ▼ 平均データの計算
         // 日ごとの全ユーザー合計時間 ÷ 全ユーザー数 = その日の平均
