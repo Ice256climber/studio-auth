@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>学習管理システム - マイページ</title>
+  <style>
+    /* デザイン変数は既存のものを維持しつつ、平均用カラーを追加 */
+    :root{ --bg:#f6f8fb; --card:#fff; --accent:#4461f2; --accent-avg:#10b981; }
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);margin:0;padding:20px;color:#0f1724}
+    .container{max-width:1400px;margin:0 auto}
+    .header{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:40px;border-radius:12px;margin-bottom:20px;box-shadow:0 10px 30px rgba(0,0,0,0.1)}
+    h1{margin:0 0 10px 0;font-size:32px}
+    .subtitle{opacity:0.9;font-size:16px}
+    
+    /* 統計カードエリア */
+    .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px;margin-bottom:20px}
+    .stat-card{background:linear-gradient(135deg,#667eea,#764ba2);color:#fff;padding:24px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.1)}
+    .stat-value{font-size:36px;font-weight:800;margin-bottom:8px}
+    .stat-label{font-size:14px;opacity:0.9}
+    
+    /* グラフ表示エリア（2カラム固定気味に調整） */
+    .student-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:20px}
+    .student-card{background:#fff;border-radius:12px;padding:20px;box-shadow:0 4px 12px rgba(0,0,0,0.06);border:1px solid #e5e7eb}
+    
+    .student-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:2px solid #f3f4f6}
+    .student-name{font-size:18px;font-weight:700;color:#0f1724}
+    .student-id{font-size:13px;color:#6b7280;margin-top:4px}
+    
+    .student-stats{display:flex;gap:16px;margin-bottom:16px}
+    .mini-stat{flex:1;text-align:center;padding:12px;background:#f9fafb;border-radius:8px}
+    .mini-stat-value{font-size:20px;font-weight:700;color:var(--accent)}
+    .mini-stat-label{font-size:11px;color:#6b7280;margin-top:4px}
+    
+    .chart-container{width:100%;height:200px;position:relative}
+    .loading{text-align:center;padding:40px;color:#6b7280}
+    .error{background:#fee;color:#c00;padding:16px;border-radius:8px;margin-bottom:20px}
+    .refresh-btn{padding:10px 20px;background:var(--accent);color:#fff;border:0;border-radius:8px;cursor:pointer;font-weight:600;float:right}
+    .refresh-btn:hover{opacity:0.9}
+
+    /* 平均グラフ用の色スタイル上書き */
+    .avg-card .mini-stat-value { color: var(--accent-avg); }
+    .avg-card .student-header div:last-child div:first-child { color: var(--accent-avg); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📚 学習ダッシュボード</h1>
+      <div class="subtitle">あなたの学習記録とクラス平均の比較</div>
+    </div>
+
+    <div id="errorMessage" class="error" style="display:none"></div>
+
+    <div class="stats-grid" id="overallStats">
+      <div class="stat-card" style="background:linear-gradient(135deg,#667eea,#764ba2)">
+        <div class="stat-value" id="myTotalHours">0h</div>
+        <div class="stat-label">あなたの総学習時間</div>
+      </div>
+      <div class="stat-card" style="background:linear-gradient(135deg,#f093fb,#f5576c)">
+        <div class="stat-value" id="avgTotalHours">0h</div>
+        <div class="stat-label">クラス平均時間</div>
+      </div>
+      <div class="stat-card" style="background:linear-gradient(135deg,#4facfe,#00f2fe)">
+        <div class="stat-value" id="myRank">-</div>
+        <div class="stat-label">クラス順位</div>
+      </div>
+      <div class="stat-card" style="background:linear-gradient(135deg,#43e97b,#38f9d7)">
+        <div class="stat-value" id="activeToday">0</div>
+        <div class="stat-label">今日の学習者数</div>
+      </div>
+    </div>
+
+    <div class="card" style="background:transparent; box-shadow:none; padding:0;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px; background:#fff; padding:20px; border-radius:12px; box-shadow:0 10px 30px rgba(16,24,40,0.06);">
+        <h2 style="margin:0">学習推移（過去7日間）</h2>
+        <button class="refresh-btn" onclick="loadData()">🔄 更新</button>
+      </div>
+      
+      <div id="studentGraphs" class="student-grid">
+        <div class="loading">データを読み込んでいます...</div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+    
+    // Supabase設定
+    const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    window.supabase = supabase
+
+    const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+    // 過去N日間の日付配列生成
+    function lastNDates(n) {
+      const today = new Date()
+      const arr = []
+      for(let i = n-1; i >= 0; i--) {
+        const d = new Date(today)
+        d.setDate(today.getDate() - i)
+        arr.push(ymd(d))
+      }
+      return arr
+    }
+
+    function showError(message) {
+      const errorEl = document.getElementById('errorMessage')
+      errorEl.textContent = message
+      errorEl.style.display = 'block'
+      setTimeout(() => errorEl.style.display = 'none', 8000)
+    }
+
+    /**
+     * 折れ線グラフ描画関数
+     * @param {string} canvasId - Canvas要素のID
+     * @param {string[]} dates - 日付ラベルの配列
+     * @param {number[]} values - 時間データの配列
+     * @param {string} colorHex - 線の色 (例: #4461f2)
+     */
+    function drawLineChart(canvasId, dates, values, colorHex) {
+      const canvas = document.getElementById(canvasId)
+      if (!canvas) return
+      
+      const ctx = canvas.getContext('2d')
+      const width = canvas.width
+      const height = canvas.height
+      
+      // キャンバスリセット
+      ctx.clearRect(0, 0, width, height)
+      
+      // 背景
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, width, height)
+      
+      // グリッド線
+      ctx.strokeStyle = '#f0f0f0'
+      ctx.lineWidth = 1
+      for(let i = 0; i <= 4; i++) {
+        const y = (height - 40) * (i / 4) + 10
+        ctx.beginPath()
+        ctx.moveTo(40, y)
+        ctx.lineTo(width - 10, y)
+        ctx.stroke()
+      }
+      
+      const maxValue = Math.max(...values, 1) // 最大値が0にならないように
+      const stepX = (width - 60) / (dates.length - 1)
+      
+      // 座標計算
+      const points = values.map((val, i) => ({
+        x: 40 + i * stepX,
+        y: 10 + (height - 50) * (1 - val / maxValue)
+      }))
+      
+      // 塗りつぶしエリア（透明度を設定）
+      // HexカラーをRGBに変換してrgbaを作成
+      const r = parseInt(colorHex.slice(1, 3), 16)
+      const g = parseInt(colorHex.slice(3, 5), 16)
+      const b = parseInt(colorHex.slice(5, 7), 16)
+      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 0.1)`
+
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, height - 30)
+      points.forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.lineTo(points[points.length - 1].x, height - 30)
+      ctx.closePath()
+      ctx.fill()
+      
+      // 線描画
+      ctx.strokeStyle = colorHex
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, points[0].y)
+      points.forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.stroke()
+      
+      // ポイント描画
+      points.forEach((p, i) => {
+        ctx.fillStyle = colorHex
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2)
+        ctx.fill()
+        
+        // 値ラベル表示
+        ctx.fillStyle = '#0f1724'
+        ctx.font = '11px Inter, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(values[i].toFixed(1) + 'h', p.x, p.y - 10)
+      })
+      
+      // 日付ラベル描画
+      dates.forEach((date, i) => {
+        const x = 40 + i * stepX
+        ctx.fillStyle = '#6b7280'
+        ctx.font = '10px Inter, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(date.slice(5), x, height - 10)
+      })
+    }
+
+    async function loadData() {
+      try {
+        console.log('📊 データ読み込み開始')
+        
+        const dates = lastNDates(7)
+        const today = ymd(new Date())
+        
+        // 過去7日間のデータをDBから取得
+        const { data: records, error } = await supabase
+          .from('study_records')
+          .select('user_id, study_date, study_time_ms')
+          .gte('study_date', dates[0])
+          .lte('study_date', dates[dates.length - 1])
+        
+        if (error) throw error
+        
+        // ユーザーごとにデータを集計
+        const userStats = {}
+        records.forEach(record => {
+          if (!userStats[record.user_id]) {
+            userStats[record.user_id] = {
+              userId: record.user_id,
+              dailyHours: {},
+              totalMs: 0,
+              recordCount: 0
+            }
+          }
+          const dateKey = record.study_date
+          if (!userStats[record.user_id].dailyHours[dateKey]) {
+            userStats[record.user_id].dailyHours[dateKey] = 0
+          }
+          userStats[record.user_id].dailyHours[dateKey] += record.study_time_ms
+          userStats[record.user_id].totalMs += record.study_time_ms
+          userStats[record.user_id].recordCount++
+        })
+        
+        const userList = Object.values(userStats)
+        const totalStudents = userList.length
+
+        // ▼ 今回のロジック: 「一番学習時間が長い人」を「ログイン中のあなた」と仮定する
+        // （実際のアプリでは auth.user().id などで判定します）
+        userList.sort((a, b) => b.totalMs - a.totalMs)
+        const myData = userList.length > 0 ? userList[0] : null
+        
+        // ▼ 平均データの計算
+        // 日ごとの全ユーザー合計時間 ÷ 全ユーザー数 = その日の平均
+        const averageDailyHours = dates.map(date => {
+            const dailySumMs = records
+                .filter(r => r.study_date === date)
+                .reduce((sum, r) => sum + r.study_time_ms, 0)
+            
+            // 人数が0の場合は0除算を防ぐ
+            return totalStudents > 0 ? (dailySumMs / totalStudents) / 3600000 : 0
+        })
+
+        // 期間中の1人あたり平均総時間
+        const averageTotalMs = userList.reduce((sum, u) => sum + u.totalMs, 0) / (totalStudents || 1)
+
+        // 今日学習した人数（アクティブユーザー）
+        const activeToday = new Set(records.filter(r => r.study_date === today).map(r => r.user_id)).size
+        
+        // --- 画面更新処理 ---
+        
+        // 1. 統計パネルの更新
+        if(myData) {
+            document.getElementById('myTotalHours').textContent = (myData.totalMs / 3600000).toFixed(1) + 'h'
+            const rank = userList.findIndex(u => u.userId === myData.userId) + 1
+            document.getElementById('myRank').textContent = `${rank}位 / ${totalStudents}人`
+        }
+        document.getElementById('avgTotalHours').textContent = (averageTotalMs / 3600000).toFixed(1) + 'h'
+        document.getElementById('activeToday').textContent = activeToday
+        
+        // 2. グラフの描画（自分 vs 平均）
+        renderDualGraphs(myData, averageDailyHours, dates)
+        
+      } catch (error) {
+        console.error('❌ データ読み込みエラー:', error)
+        showError('データの読み込みに失敗しました: ' + error.message)
+      }
+    }
+
+    function renderDualGraphs(userData, averageDailyHours, dates) {
+      const container = document.getElementById('studentGraphs')
+      container.innerHTML = ''
+      
+      if (!userData) {
+        container.innerHTML = '<div class="loading">データがありません</div>'
+        return
+      }
+
+      // カードHTMLの生成ヘルパー
+      const createCard = (title, subtitle, totalMs, count, dailyValues, index, color, isAvg) => {
+        const totalHours = (totalMs / 3600000).toFixed(1)
+        const avgPerSession = (typeof count === 'number') 
+            ? (totalMs / count / 3600000).toFixed(1) 
+            : '-'
+        const maxDay = Math.max(...dailyValues)
+        const canvasId = `chart-${index}`
+        const extraClass = isAvg ? ' avg-card' : ''
+        
+        return `
+          <div class="student-card${extraClass}">
+            <div class="student-header">
+              <div>
+                <div class="student-name">${title}</div>
+                <div class="student-id">${subtitle}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:24px;font-weight:800;color:${color}">${totalHours}h</div>
+                <div style="font-size:11px;color:#6b7280">期間合計</div>
+              </div>
+            </div>
+            <div class="student-stats">
+              <div class="mini-stat">
+                <div class="mini-stat-value">${count}</div>
+                <div class="mini-stat-label">学習回数</div>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-value">${avgPerSession}h</div>
+                <div class="mini-stat-label">1回平均</div>
+              </div>
+              <div class="mini-stat">
+                <div class="mini-stat-value">${maxDay.toFixed(1)}h</div>
+                <div class="mini-stat-label">最高記録</div>
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="${canvasId}" width="380" height="200"></canvas>
+            </div>
+          </div>
+        `
+      }
+
+      // --- 1. 自分のグラフカード ---
+      const myValues = dates.map(d => (userData.dailyHours[d] || 0) / 3600000)
+      const myCardHtml = createCard(
+          'あなた', 
+          `ID: ${userData.userId.slice(0, 8)}...`, 
+          userData.totalMs, 
+          userData.recordCount, 
+          myValues, 
+          0, 
+          '#4461f2', 
+          false
+      )
+
+      // --- 2. 平均のグラフカード ---
+      const avgTotalMs = averageDailyHours.reduce((sum, h) => sum + h, 0) * 3600000
+      const avgCardHtml = createCard(
+          'クラス平均', 
+          '全生徒の平均値', 
+          avgTotalMs, 
+          '-', 
+          averageDailyHours, 
+          1, 
+          '#10b981', 
+          true
+      )
+
+      // コンテナに挿入
+      container.innerHTML = myCardHtml + avgCardHtml
+
+      // Canvas描画（DOM生成後）
+      setTimeout(() => {
+          drawLineChart('chart-0', dates, myValues, '#4461f2')
+          drawLineChart('chart-1', dates, averageDailyHours, '#10b981')
+      }, 50)
+    }
+
+    // グローバル公開
+    window.loadData = loadData
+
+    // 起動
+    loadData()
+    setInterval(loadData, 300000)
+  </script>
+</body>
+</html>
