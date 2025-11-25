@@ -243,13 +243,13 @@
 
         // ▼ 今回のロジック: 「一番学習時間が長い人」を「ログイン中のあなた」と仮定する
         // （実際のアプリでは auth.user().id などで判定します）
-        const { data: { user } } = await sb.auth.getuser();
+        const { data: { user } } = await supabase.auth.getuser();
 
-        const mydata = user
+        const myData = user
           ? userList.find(u => u.user_id === user.id) || null
           : null;
 
-        if (!mydata) {
+        if (!myData) {
           console.warn("ログインユーザのデータがありません");
         }
         
