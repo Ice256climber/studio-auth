@@ -177,12 +177,25 @@
           }
         }
         
-        showStatus('✅ 登録完了。確認メールを確認してください（メール確認が不要な設定の場合はそのままサインインできます）')
-        
-        // 少し待ってからセッション確認
-        setTimeout(async () => {
-          await refreshSession()
-        }, 2000)
+        // セッションがあるか確認
+        if (data.session) {
+          // すぐにログインできる場合
+          const { data: userRow } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('user_id', data.user.id)
+            .maybeSingle()
+          
+          const userRole = userRow?.role || role
+          showSignedIn(data.user.email, userRole)
+          showStatus('✅ 登録完了＆自動ログインしました')
+        } else {
+          // メール確認が必要な場合
+          showStatus('✅ 登録完了。確認メールを確認してください')
+          setTimeout(async () => {
+            await refreshSession()
+          }, 2000)
+        }
         
       } catch (e) {
         console.error('サインアップエラー:', e)
