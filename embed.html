@@ -179,7 +179,7 @@
         
         // セッションがあるか確認
         if (data.session) {
-          // すぐにログインできる場合
+          // すぐにログインできる場合（メール確認不要の設定）
           const { data: userRow } = await supabase
             .from('user_profiles')
             .select('role')
@@ -191,10 +191,7 @@
           showStatus('✅ 登録完了＆自動ログインしました')
         } else {
           // メール確認が必要な場合
-          showStatus('✅ 登録完了。確認メールを確認してください')
-          setTimeout(async () => {
-            await refreshSession()
-          }, 2000)
+          showStatus('✅ 登録完了！メールを確認してリンクをクリックしてください。その後このページで「サインイン」してください。')
         }
         
       } catch (e) {
