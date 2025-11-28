@@ -41,7 +41,7 @@
       <!-- ログイン後の表示 -->
       <div id="after" class="hidden mt-2 p-4 rounded border bg-white">
         <h2 class="font-medium text-lg" id="welcomeTitle"></h2>
-        <p class="text-sm text-gray-600 mt-2" id="welcomeBody"></p>
+        <p class="text-sm text-gray-600 mt-2 whitespace-pre-line" id="welcomeBody"></p>
         <div class="mt-3 flex gap-2">
           <button id="btn-signout" class="py-2 px-4 rounded border hover:bg-gray-50">サインアウト</button>
           <a href="embed4.html" class="py-2 px-4 rounded bg-blue-600 text-white hover:bg-blue-700">タイマーへ</a>
@@ -56,7 +56,18 @@
     const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    // iframe環境を考慮した設定
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false, // iframe内ではURL検出を無効化
+        storage: window.localStorage, // 明示的にlocalStorageを指定
+        storageKey: 'supabase.auth.token', // カスタムキー
+        flowType: 'pkce' // より安全な認証フロー
+      }
+    })
+    
     window.supabase = supabase
 
     const statusEl = document.getElementById('status')
@@ -78,17 +89,28 @@
 
     async function refreshSession() {
       try {
-        const { data: { user }, error } = await supabase.auth.getUser()
+        // まずセッションを取得
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
         
-        if(error) throw error
+        if (sessionError) {
+          console.error('セッション取得エラー:', sessionError)
+          showStatus('サインインしていません。')
+          return null
+        }
         
-        if (user) {
+        if (session?.user) {
+          const user = session.user
+          
           // user_profilesテーブルから役割を取得
           const { data: userRow, error: profileError } = await supabase
             .from('user_profiles')
             .select('role')
             .eq('user_id', user.id)
             .maybeSingle()
+          
+          if (profileError) {
+            console.error('プロフィール取得エラー:', profileError)
+          }
           
           const role = userRow?.role || 'student'
           showSignedIn(user.email, role)
@@ -99,7 +121,7 @@
         }
       } catch (e) {
         console.error('認証確認エラー:', e)
-        showStatus('セッション確認エラー')
+        showStatus('サインインしていません。')
         return null
       }
     }
@@ -126,7 +148,16 @@
       showStatus('📝 サインアップ中...')
       
       try {
-        const { data, error } = await supabase.auth.signUp({ email, password })
+        const { data, error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: {
+              role: role // メタデータとしても保存
+            }
+          }
+        })
+        
         if (error) throw error
         
         // user_profilesテーブルに役割を保存
@@ -141,17 +172,20 @@
               onConflict: 'user_id' 
             })
           
-          if(profileError){
+          if (profileError) {
             console.error('プロフィール保存エラー:', profileError)
           }
         }
         
         showStatus('✅ 登録完了。確認メールを確認してください（メール確認が不要な設定の場合はそのままサインインできます）')
         
-        // 自動的にログイン状態を確認
-        setTimeout(() => refreshSession(), 1000)
+        // 少し待ってからセッション確認
+        setTimeout(async () => {
+          await refreshSession()
+        }, 2000)
         
       } catch (e) {
+        console.error('サインアップエラー:', e)
         showStatus('❌ エラー: ' + (e.message || e))
       } finally {
         btnSignup.disabled = false
@@ -188,6 +222,7 @@
         showSignedIn(data.user.email, role)
         
       } catch (e) {
+        console.error('サインインエラー:', e)
         showStatus('❌ エラー: ' + (e.message || e))
       } finally {
         btnSignin.disabled = false
@@ -212,6 +247,7 @@
         if (error) throw error
         showStatus('✅ リセットメールを送信しました。')
       } catch (e) {
+        console.error('リセットエラー:', e)
         showStatus('❌ エラー: ' + (e.message || e))
       } finally {
         btnReset.disabled = false
@@ -220,9 +256,25 @@
 
     // サインアウト
     btnSignout.addEventListener('click', async () => {
-      await supabase.auth.signOut()
-      afterEl.classList.add('hidden')
-      showStatus('👋 サインアウトしました。')
+      try {
+        await supabase.auth.signOut()
+        afterEl.classList.add('hidden')
+        showStatus('👋 サインアウトしました。')
+      } catch (e) {
+        console.error('サインアウトエラー:', e)
+        showStatus('❌ サインアウトエラー')
+      }
+    })
+
+    // 認証状態の変更を監視
+    supabase.auth.onAuthStateChange((event, session) => {
+      console.log('認証イベント:', event, session)
+      if (event === 'SIGNED_IN' && session) {
+        refreshSession()
+      } else if (event === 'SIGNED_OUT') {
+        afterEl.classList.add('hidden')
+        showStatus('サインインしていません。')
+      }
     })
 
     // 初期化
