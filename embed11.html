@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Studio Auth — サインイン / サインアップ</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-gradient-to-br from-gray-50 to-white flex items-center justify-center p-6">
+  <main class="w-full max-w-lg bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl shadow-lg p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h1 class="text-2xl font-semibold">アカウント</h1>
+      <div class="text-sm text-gray-500">先生 / 生徒 を選択して登録</div>
+    </div>
+
+    <div id="status" class="mb-4 text-sm text-gray-600">読み込み中…</div>
+
+    <div class="grid grid-cols-1 gap-4">
+      <!-- メール認証フォーム -->
+      <div class="p-4 rounded-lg border bg-gray-50">
+        <label class="block text-xs text-gray-600">メールアドレス</label>
+        <input id="email" type="email" class="w-full mt-1 p-2 rounded border" placeholder="you@example.com" />
+
+        <label class="block text-xs text-gray-600 mt-3">パスワード</label>
+        <input id="password" type="password" class="w-full mt-1 p-2 rounded border" placeholder="8文字以上" />
+
+        <div class="mt-3 flex gap-2 items-center">
+          <select id="role" class="p-2 rounded border">
+            <option value="student">生徒</option>
+            <option value="teacher">先生</option>
+          </select>
+          <button id="btn-signup" class="ml-auto py-2 px-4 rounded bg-green-600 text-white hover:bg-green-700">サインアップ</button>
+          <button id="btn-signin" class="py-2 px-4 rounded border hover:bg-gray-50">サインイン</button>
+        </div>
+
+        <div class="mt-3 text-center">
+          <button id="btn-reset" class="text-xs text-gray-500 hover:text-gray-700">パスワードリセット</button>
+        </div>
+      </div>
+
+      <!-- ログイン後の表示 -->
+      <div id="after" class="hidden mt-2 p-4 rounded border bg-white">
+        <h2 class="font-medium text-lg" id="welcomeTitle"></h2>
+        <p class="text-sm text-gray-600 mt-2 whitespace-pre-line" id="welcomeBody"></p>
+        <div class="mt-3 flex gap-2">
+          <button id="btn-signout" class="py-2 px-4 rounded border hover:bg-gray-50">サインアウト</button>
+          <a href="embed4.html" class="py-2 px-4 rounded bg-blue-600 text-white hover:bg-blue-700">タイマーへ</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script type="module">
+    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+
+    const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+
+    // iframe環境を考慮した設定
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false, // iframe内ではURL検出を無効化
+        storage: window.localStorage, // 明示的にlocalStorageを指定
+        storageKey: 'supabase.auth.token', // カスタムキー
+        flowType: 'pkce' // より安全な認証フロー
+      }
+    })
+    
+    window.supabase = supabase
+
+    const statusEl = document.getElementById('status')
+    const btnSignin = document.getElementById('btn-signin')
+    const btnSignup = document.getElementById('btn-signup')
+    const btnReset = document.getElementById('btn-reset')
+    const btnSignout = document.getElementById('btn-signout')
+    const emailInput = document.getElementById('email')
+    const passwordInput = document.getElementById('password')
+    const roleSelect = document.getElementById('role')
+    const afterEl = document.getElementById('after')
+    const welcomeTitle = document.getElementById('welcomeTitle')
+    const welcomeBody = document.getElementById('welcomeBody')
+
+    function showStatus(msg) {
+      statusEl.innerText = msg
+      console.log('📌 Status:', msg)
+    }
+
+    async function refreshSession() {
+      try {
+        // まずセッションを取得
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+        
+        if (sessionError) {
+          console.error('セッション取得エラー:', sessionError)
+          showStatus('サインインしていません。')
+          return null
+        }
+        
+        if (session?.user) {
+          const user = session.user
+          
+          // user_profilesテーブルから役割を取得
+          const { data: userRow, error: profileError } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('user_id', user.id)
+            .maybeSingle()
+          
+          if (profileError) {
+            console.error('プロフィール取得エラー:', profileError)
+          }
+          
+          const role = userRow?.role || 'student'
+          showSignedIn(user.email, role)
+          return user
+        } else {
+          showStatus('サインインしていません。')
+          return null
+        }
+      } catch (e) {
+        console.error('認証確認エラー:', e)
+        showStatus('サインインしていません。')
+        return null
+      }
+    }
+
+    function showSignedIn(email, role) {
+      afterEl.classList.remove('hidden')
+      welcomeTitle.innerText = role === 'teacher' ? '👨‍🏫 先生ようこそ！' : '👨‍🎓 生徒さんようこそ！'
+      welcomeBody.innerText = `ログイン: ${email}\n役割: ${role}`
+      showStatus('✅ ログイン済み')
+    }
+
+    // サインアップ
+    btnSignup.addEventListener('click', async () => {
+      const email = emailInput.value.trim()
+      const password = passwordInput.value
+      const role = roleSelect.value
+      
+      if (!email || password.length < 8) {
+        showStatus('❌ メールと8文字以上のパスワードを入力してください')
+        return
+      }
+      
+      btnSignup.disabled = true
+      showStatus('📝 サインアップ中...')
+      
+      try {
+        const { data, error } = await supabase.auth.signUp({ 
+          email, 
+          password,
+          options: {
+            data: {
+              role: role // メタデータとしても保存
+            }
+          }
+        })
+        
+        if (error) throw error
+        
+        // user_profilesテーブルに役割を保存
+        if (data?.user?.id) {
+          const { error: profileError } = await supabase
+            .from('user_profiles')
+            .upsert({ 
+              user_id: data.user.id, 
+              role, 
+              email 
+            }, { 
+              onConflict: 'user_id' 
+            })
+          
+          if (profileError) {
+            console.error('プロフィール保存エラー:', profileError)
+          }
+        }
+        
+        // セッションがあるか確認
+        if (data.session) {
+          // すぐにログインできる場合（メール確認不要の設定）
+          const { data: userRow } = await supabase
+            .from('user_profiles')
+            .select('role')
+            .eq('user_id', data.user.id)
+            .maybeSingle()
+          
+          const userRole = userRow?.role || role
+          showSignedIn(data.user.email, userRole)
+          showStatus('✅ 登録完了＆自動ログインしました')
+        } else {
+          // メール確認が必要な場合
+          showStatus('✅ 登録完了！メールを確認してリンクをクリックしてください。その後このページで「サインイン」してください。')
+        }
+        
+      } catch (e) {
+        console.error('サインアップエラー:', e)
+        showStatus('❌ エラー: ' + (e.message || e))
+      } finally {
+        btnSignup.disabled = false
+      }
+    })
+
+    // サインイン
+    btnSignin.addEventListener('click', async () => {
+      const email = emailInput.value.trim()
+      const password = passwordInput.value
+      
+      if (!email || password.length < 8) {
+        showStatus('❌ メールと8文字以上のパスワードを入力してください')
+        return
+      }
+      
+      btnSignin.disabled = true
+      showStatus('🔐 サインイン中...')
+      
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        if (error) throw error
+        
+        const userId = data.user.id
+        
+        // user_profilesから役割を取得
+        const { data: userRow } = await supabase
+          .from('user_profiles')
+          .select('role')
+          .eq('user_id', userId)
+          .maybeSingle()
+        
+        const role = userRow?.role || 'student'
+        showSignedIn(data.user.email, role)
+        
+      } catch (e) {
+        console.error('サインインエラー:', e)
+        showStatus('❌ エラー: ' + (e.message || e))
+      } finally {
+        btnSignin.disabled = false
+      }
+    })
+
+    // パスワードリセット
+    btnReset.addEventListener('click', async () => {
+      const email = emailInput.value.trim()
+      if (!email) {
+        showStatus('❌ メールを入力してください')
+        return
+      }
+      
+      btnReset.disabled = true
+      showStatus('📧 リセットメール送信中...')
+      
+      try {
+        const { error } = await supabase.auth.resetPasswordForEmail(email, { 
+          redirectTo: window.location.origin + '/password-reset.html' 
+        })
+        if (error) throw error
+        showStatus('✅ リセットメールを送信しました。')
+      } catch (e) {
+        console.error('リセットエラー:', e)
+        showStatus('❌ エラー: ' + (e.message || e))
+      } finally {
+        btnReset.disabled = false
+      }
+    })
+
+    // サインアウト
+    btnSignout.addEventListener('click', async () => {
+      try {
+        await supabase.auth.signOut()
+        afterEl.classList.add('hidden')
+        showStatus('👋 サインアウトしました。')
+      } catch (e) {
+        console.error('サインアウトエラー:', e)
+        showStatus('❌ サインアウトエラー')
+      }
+    })
+
+    // 認証状態の変更を監視
+    supabase.auth.onAuthStateChange((event, session) => {
+      console.log('認証イベント:', event, session)
+      if (event === 'SIGNED_IN' && session) {
+        refreshSession()
+      } else if (event === 'SIGNED_OUT') {
+        afterEl.classList.add('hidden')
+        showStatus('サインインしていません。')
+      }
+    })
+
+    // 初期化
+    (async () => {
+      await refreshSession()
+    })()
+  </script>
+</body>
+</html>
