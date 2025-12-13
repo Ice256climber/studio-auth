@@ -51,7 +51,31 @@
   </main>
 
   <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+    // グローバルエラーハンドリング
+    window.addEventListener('error', (e) => {
+      console.error('❌ グローバルエラー:', e.message, e.error)
+      document.getElementById('status').textContent = 'エラー: ' + e.message
+    })
+
+    window.addEventListener('unhandledrejection', (e) => {
+      console.error('❌ Promise拒否:', e.reason)
+      document.getElementById('status').textContent = 'エラー: ' + e.reason
+    })
+
+    console.log('🚀 スクリプト開始')
+
+    // Supabaseライブラリの読み込み（バージョン指定）
+    let createClient
+    try {
+      console.log('📦 Supabaseライブラリ読み込み中...')
+      const module = await import('https://unpkg.com/@supabase/supabase-js@2.39.0/dist/module/index.js')
+      createClient = module.createClient
+      console.log('✅ Supabaseライブラリ読み込み成功')
+    } catch(e) {
+      console.error('❌ Supabaseライブラリ読み込み失敗:', e)
+      document.getElementById('status').textContent = '❌ ライブラリ読み込みエラー: ' + e.message
+      throw e
+    }
 
     const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
@@ -70,18 +94,27 @@
       return isDev ? window.location.origin + window.location.pathname : production
     }
 
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true, // メール認証後のリダイレクトを検出
-        storage: window.localStorage,
-        storageKey: 'supabase.auth.token',
-        flowType: 'pkce'
-      }
-    })
-    
-    window.supabase = supabase
+    // Supabaseクライアントの初期化
+    let supabase
+    try {
+      console.log('🔧 Supabaseクライアント初期化中...')
+      supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          storage: window.localStorage,
+          storageKey: 'supabase.auth.token',
+          flowType: 'pkce'
+        }
+      })
+      console.log('✅ Supabaseクライアント初期化成功')
+      window.supabase = supabase
+    } catch(e) {
+      console.error('❌ Supabaseクライアント初期化失敗:', e)
+      document.getElementById('status').textContent = '❌ 初期化エラー: ' + e.message
+      throw e
+    }
 
     const statusEl = document.getElementById('status')
     const btnSignin = document.getElementById('btn-signin')
