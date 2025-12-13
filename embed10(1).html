@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>学習実態調査</title>
+<style>
+:root{ --bg:#f6f8fb; --card:#fff; --muted:#6b7280; --accent:#4461f2; --radius:12px; }
+*{box-sizing:border-box}
+body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);margin:18px;color:#0f1724}
+.wrap{max-width:1400px;margin:0 auto}
+.card{background:var(--card);border-radius:var(--radius);padding:12px;box-shadow:0 10px 30px rgba(16,24,40,0.06);margin-bottom:12px}
+.top{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap}
+.small{font-size:13px;color:var(--muted)}
+.palette{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.subject-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;color:#fff;font-weight:700;cursor:pointer;border:0;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
+.subject-btn:hover{opacity:0.9;transform:translateY(-1px)}
+.subject-btn.active{outline:3px solid var(--accent);outline-offset:3px}
+.subject-icon{width:20px;height:20px;border-radius:50%;border:1px solid #fff;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;color:#0f1724}
+.time-display{font-size:48px;font-weight:800;text-align:center;margin:20px 0;letter-spacing:-1px}
+.buttons{display:flex;gap:12px;flex-wrap:wrap}
+.buttons button{flex:1;padding:16px 20px;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;border:0;transition:background 0.2s}
+#startBtn{background:var(--accent);color:#fff}
+#startBtn:hover{background:#354fb8}
+#startBtn.running{background:#dc2626}
+#startBtn.running:hover{background:#b91c1c}
+#resetBtn{background:#f3f4f6;color:#0f1724}
+#resetBtn:hover{background:#e5e7eb}
+.date-section{display:flex;gap:8px;align-items:center;margin-top:12px}
+.date-section label{font-size:14px;color:var(--muted);width:60px}
+.date-section input[type="date"],.date-section input[type="time"]{padding:8px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;flex-grow:1}
+.date-section button{padding:8px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer}
+.date-section button:hover{background:#e5e7eb}
+.timer-status{font-size:14px;text-align:center;margin-top:12px;height:20px}
+.log-card{margin-top:20px;padding:16px;background:#fff;border-radius:var(--radius);box-shadow:0 4px 12px rgba(0,0,0,0.04);max-height:300px;overflow-y:auto}
+.log-item{padding:8px 0;border-bottom:1px dashed #f3f4f6;display:flex;justify-content:space-between}
+.log-item:last-child{border-bottom:none}
+.log-time{font-weight:600;color:var(--accent)}
+.log-subject{font-size:13px}
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <div class="top">
+      <div>
+        <h2 style="margin:0">学習内容</h2>
+        <div class="small">学習開始前に選択してください</div>
+        <div class="palette" id="subjectPalette">
+          </div>
+      </div>
+      <div>
+        <button id="authBtn" class="subject-btn" style="background:#0f172a">🔑 サインイン</button>
+        <div class="small" id="userIdDisplay" style="margin-top:5px;text-align:right">ユーザーID: 未認証</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="date-section">
+      <label for="dateInput">日付</label>
+      <input type="date" id="dateInput">
+      <label for="startTimeInput">開始時刻</label>
+      <input type="time" id="startTimeInput">
+      <button id="setNowBtn">今</button>
+    </div>
+
+    <div class="time-display" id="elapsedDisplay">00:00:00</div>
+    <div class="timer-status" id="timerStatus">停止中</div>
+    
+    <div class="buttons">
+      <button id="startBtn">開始</button>
+      <button id="resetBtn">リセット</button>
+    </div>
+  </div>
+
+  <div id="logCard" class="log-card" style="display:none;">
+    <h3 style="margin:0 0 10px 0;font-size:16px">本日の記録</h3>
+    <div id="dailyLog"></div>
+  </div>
+</div>
+
+<script>
+  // UMD版で読み込まれたグローバル変数からcreateClientを取得
+  const { createClient } = window.supabase
+
+  const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  window.supabase = supabase // グローバルアクセス用に公開
+
+  // DOM要素
+  const elapsedDisplay = document.getElementById('elapsedDisplay')
+  const timerStatus = document.getElementById('timerStatus')
+  const startBtn = document.getElementById('startBtn')
+  const resetBtn = document.getElementById('resetBtn')
+  const dateInput = document.getElementById('dateInput')
+  const startTimeInput = document.getElementById('startTimeInput')
+  const setNowBtn = document.getElementById('setNowBtn')
+  const subjectPalette = document.getElementById('subjectPalette')
+  const userIdDisplay = document.getElementById('userIdDisplay')
+  const authBtn = document.getElementById('authBtn')
+  const dailyLogEl = document.getElementById('dailyLog')
+  const logCard = document.getElementById('logCard')
+
+  // 定数
+  const SUBJECTS = [
+    { name: '数学', color: '#4461f2', icon: 'M' },
+    { name: '英語', color: '#10b981', icon: 'E' },
+    { name: '国語', color: '#f59e0b', icon: '国' },
+    { name: '理科', color: '#ef4444', icon: '理' },
+    { name: '社会', color: '#8b5cf6', icon: '社' },
+    { name: 'その他', color: '#6b7280', icon: '他' }
+  ]
+  const LOCAL_STORAGE_KEY = 'studio_timer_state'
+  const TIME_THRESHOLD_MS = 1000 // 1秒未満は保存しない
+
+  // 状態管理
+  const state = {
+    timer: {
+      running: false,
+      startTime: null,
+      sessionAccumulatedMs: 0,
+      _lastTick: null
+    },
+    selectedSubject: SUBJECTS[0],
+    user: null, // Supabase Auth user object
+    dailyLog: [] // その日の記録
+  }
+
+  // --- ユーティリティ関数 ---
+
+  function fmt(ms) {
+    const totalSeconds = Math.floor(ms / 1000)
+    const hours = Math.floor(totalSeconds / 3600)
+    const minutes = Math.floor((totalSeconds % 3600) / 60)
+    const seconds = totalSeconds % 60
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+  }
+
+  function timeIn(d) {
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  }
+
+  function todayYMD() {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+  }
+
+  // --- 状態の永続化 ---
+
+  function saveLocal() {
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({
+      timer: {
+        running: state.timer.running,
+        sessionAccumulatedMs: state.timer.sessionAccumulatedMs,
+        // runningがtrueの場合のみstartTimeと_lastTickを保存
+        startTime: state.timer.running ? state.timer.startTime : null,
+        _lastTick: state.timer.running ? state.timer._lastTick : null
+      },
+      selectedSubject: state.selectedSubject,
+      date: dateInput.value,
+      startTime: startTimeInput.value
+    }))
+  }
+
+  function loadLocal() {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY)
+    if (saved) {
+      const data = JSON.parse(saved)
+      state.timer.sessionAccumulatedMs = data.timer.sessionAccumulatedMs || 0
+      state.selectedSubject = data.selectedSubject || SUBJECTS[0]
+      dateInput.value = data.date || todayYMD()
+      startTimeInput.value = data.startTime || timeIn(new Date())
+
+      // 実行中の状態を復元
+      if (data.timer.running && data.timer._lastTick) {
+        const lastTickTime = new Date(data.timer._lastTick).getTime()
+        const now = Date.now()
+        // 停止中に経過した時間を加算
+        const elapsedSincePause = now - lastTickTime
+        state.timer.sessionAccumulatedMs += elapsedSincePause
+        
+        // タイマーを再開
+        state.timer.running = true
+        state.timer.startTime = data.timer.startTime
+        startTicking()
+      } else {
+        state.timer.running = false
+      }
+    } else {
+      dateInput.value = todayYMD()
+      startTimeInput.value = timeIn(new Date())
+    }
+  }
+
+  // --- レンダリング ---
+
+  function renderSubjects() {
+    subjectPalette.innerHTML = ''
+    SUBJECTS.forEach(subject => {
+      const btn = document.createElement('button')
+      btn.className = 'subject-btn'
+      btn.style.backgroundColor = subject.color
+      btn.textContent = subject.name
+      
+      const icon = document.createElement('span')
+      icon.className = 'subject-icon'
+      icon.textContent = subject.icon
+      btn.prepend(icon)
+
+      if (state.selectedSubject.name === subject.name) {
+        btn.classList.add('active')
+      }
+
+      btn.addEventListener('click', () => {
+        state.selectedSubject = subject
+        renderSubjects()
+        saveLocal()
+      })
+      subjectPalette.appendChild(btn)
+    })
+  }
+
+  function updateElapsedDisplay() {
+    elapsedDisplay.textContent = fmt(state.timer.sessionAccumulatedMs)
+  }
+
+  function updateStatus(message) {
+    timerStatus.textContent = message
+  }
+
+  function renderLog() {
+    if (!state.user) {
+      logCard.style.display = 'none'
+      return
+    }
+
+    logCard.style.display = 'block'
+    dailyLogEl.innerHTML = ''
+    
+    if (state.dailyLog.length === 0) {
+      dailyLogEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:10px">本日の記録はありません。</div>'
+      return
+    }
+
+    state.dailyLog
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      .forEach(log => {
+        const item = document.createElement('div')
+        item.className = 'log-item'
+        
+        const time = fmt(log.study_time_ms)
+        const datePart = new Date(log.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
+        
+        item.innerHTML = `
+          <div class="log-subject" style="color:${log.subject_color}">${log.subject_name}</div>
+          <div>
+            <span class="log-time">${time}</span>
+            <span class="small" style="margin-left:8px">(${datePart} 終了)</span>
+          </div>
+        `
+        dailyLogEl.appendChild(item)
+      })
+  }
+
+  function renderAuth() {
+    if (state.user) {
+      userIdDisplay.textContent = `ID: ${state.user.id.slice(0, 8)}...`
+      authBtn.textContent = '👋 サインアウト'
+      authBtn.style.backgroundColor = '#f97316'
+      authBtn.onclick = signOut
+    } else {
+      userIdDisplay.textContent = 'ユーザーID: 未認証'
+      authBtn.textContent = '🔑 サインイン'
+      authBtn.style.backgroundColor = '#0f172a'
+      authBtn.onclick = signIn
+    }
+  }
+
+  function renderAll() {
+    updateElapsedDisplay()
+    updateButtonStyles()
+    renderSubjects()
+    renderLog()
+    renderAuth()
+  }
+
+  // --- 認証とログ ---
+
+  async function fetchDailyLog() {
+    if (!state.user) {
+      state.dailyLog = []
+      return
+    }
+
+    try {
+      const { data, error } = await supabase
+        .from('study_records')
+        .select('*')
+        .eq('user_id', state.user.id)
+        .eq('study_date', dateInput.value) // 選択された日付のログを取得
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      state.dailyLog = data
+    } catch (e) {
+      console.error('❌ ログ取得エラー:', e)
+      state.dailyLog = []
+    }
+    renderLog()
+  }
+
+  function signIn() {
+    window.open('embed12.html', '_blank') // 認証ページを開く
+  }
+
+  async function signOut() {
+    try {
+      await supabase.auth.signOut()
+      // onAuthStateChangeで処理される
+    } catch (e) {
+      console.error('サインアウトエラー:', e)
+      alert('サインアウトに失敗しました')
+    }
+  }
+
+  // --- タイマー処理 ---
+
+  function startTicking() {
+    if (window._tickI) clearInterval(window._tickI)
+    
+    // 100msごとに更新して、より滑らかにする
+    window._tickI = setInterval(() => {
+      if (!state.timer.running) {
+        clearInterval(window._tickI)
+        return
+      }
+      
+      const now = Date.now()
+      if (state.timer._lastTick) {
+        const delta = now - state.timer._lastTick
+        state.timer.sessionAccumulatedMs += delta
+      }
+      state.timer._lastTick = now
+      updateElapsedDisplay()
+    }, 100)
+    updateStatus('計測中...')
+  }
+
+  function startTimer() {
+    if (state.timer.running) return
+    if (!state.user) {
+      alert('学習を開始するには、まずサインインしてください。')
+      signIn()
+      return
+    }
+    
+    // タイマーをリセットしなくても、ポーズ状態から再開できるように
+    if (state.timer.sessionAccumulatedMs === 0) {
+      // セッションが0から開始する場合は、開始時刻と日付を再設定
+      dateInput.value = todayYMD()
+      startTimeInput.value = timeIn(new Date())
+    }
+
+    state.timer.running = true
+    state.timer._lastTick = Date.now()
+    startTicking()
+    updateButtonStyles()
+    saveLocal()
+  }
+
+  async function pauseTimer() {
+    if (!state.timer.running) return
+    state.timer.running = false
+    clearInterval(window._tickI)
+    
+    updateStatus('停止中')
+    updateButtonStyles()
+    saveLocal()
+
+    const studyTimeMs = state.timer.sessionAccumulatedMs
+    
+    if(studyTimeMs >= TIME_THRESHOLD_MS){
+      try{
+        const user = state.user
+        if(!user){
+          alert('サインインされていません。データ保存をスキップしました。')
+          return
+        }
+        
+        // データの保存
+        const { error } = await supabase
+          .from('study_records')
+          .insert({
+            user_id: user.id,
+            study_date: dateInput.value,
+            start_time: startTimeInput.value,
+            study_time_ms: studyTimeMs,
+            subject_name: state.selectedSubject.name,
+            subject_color: state.selectedSubject.color
+          })
+          
+        if(error){
+          console.error('❌ Supabase保存エラー:', error)
+          alert('データ保存に失敗しました: ' + error.message)
+        } else {
+          console.log('✅ Supabase保存成功')
+          alert(`お疲れ様でした!\n${fmt(studyTimeMs)} を記録しました。`)
+          
+          // 記録成功後、タイマーをリセット
+          resetTimer(false) // 確認メッセージなしでリセット
+          await fetchDailyLog() // ログを更新
+        }
+      }catch(e){
+        console.error('❌ 保存処理の例外:', e)
+        alert('データ保存中にエラーが発生しました')
+      }
+    } else {
+      console.log('⭐️ 1秒未満のため保存スキップ')
+      // 保存をスキップした場合もリセット
+      resetTimer(false) 
+    }
+    console.log('⏸️ タイマー停止処理完了')
+  }
+
+  function resetTimer(confirmRequired = true){ 
+    if(confirmRequired && !confirm('タイマーをリセットします。よろしいですか?')) return
+    
+    state.timer.running = false
+    clearInterval(window._tickI)
+    state.timer._lastTick = null
+    state.timer.sessionAccumulatedMs = 0
+    updateElapsedDisplay()
+    updateButtonStyles()
+    saveLocal()
+    renderAll()
+    updateStatus('停止中')
+  }
+
+  function onSetNow(){ 
+    startTimeInput.value = timeIn(new Date())
+  }
+
+  function updateButtonStyles(){ 
+    if(state.timer.running){ 
+      startBtn.textContent = '停止'
+      startBtn.classList.add('running')
+    } else { 
+      startBtn.textContent = '開始'
+      startBtn.classList.remove('running')
+    }
+  }
+
+  // --- イベントリスナー ---
+  
+  startBtn.addEventListener('click', ()=> {
+    if(state.timer.running) pauseTimer()
+    else startTimer()
+  })
+  resetBtn.addEventListener('click', () => resetTimer())
+  setNowBtn.addEventListener('click', onSetNow)
+  dateInput.addEventListener('change', ()=> {
+    saveLocal()
+    fetchDailyLog() // 日付変更でログを再取得
+  })
+  
+  // --- 初期化 ---
+
+  ;(async function init(){
+    loadLocal()
+    
+    // 認証状態の監視
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (session) {
+        state.user = session.user
+      } else {
+        state.user = null
+      }
+      renderAuth()
+      fetchDailyLog() // 認証状態が変わったらログを再取得
+    })
+    
+    // 初回ロード時のユーザー情報を取得
+    const { data: { user } } = await supabase.auth.getUser()
+    state.user = user
+    
+    renderAll()
+    fetchDailyLog()
+
+  })()
+</script>
+</body>
+</html>
