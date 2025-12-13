@@ -59,7 +59,7 @@
     // 現在のURLを取得（本番環境でも動作するように）
     const getRedirectUrl = () => {
       // 本番環境のURLに置き換えてください
-      const production = 'https://ice256climber.github.io/studio-auth/embed12.html'
+      const production = 'https://your-domain.com/embed11.html'
       
       // 開発環境かどうかを判定
       const isDev = window.location.hostname === 'localhost' || 
@@ -313,11 +313,13 @@
       }
     })
 
-    // 認証状態の変更を監視
+    // 認証状態の変更を監視（無限ループ回避版）
     supabase.auth.onAuthStateChange((event, session) => {
       console.log('🔄 認証イベント:', event, session ? 'セッションあり' : 'セッション無し')
+      
+      // refreshSession() を呼ばずに、直接UIを更新
       if (event === 'SIGNED_IN' && session) {
-        refreshSession()
+        updateUIFromSession(session)
       } else if (event === 'SIGNED_OUT') {
         afterEl.classList.add('hidden')
         showStatus('サインインしていません。')
@@ -328,6 +330,7 @@
     (async () => {
       console.log('🚀 アプリ初期化開始')
       await refreshSession()
+      console.log('✅ 初期化完了')
     })()
   </script>
 </body>
