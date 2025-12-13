@@ -36,6 +36,9 @@
     .error{background:#fee;color:#c00;padding:16px;border-radius:8px;margin-bottom:20px}
     .last-updated{font-size:13px;color:#6b7280;margin-top:10px}
   </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+
 </head>
 <body>
   <div class="container">
@@ -60,8 +63,9 @@
     </div>
   </div>
 
-  <script type="module">
-    import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+  <script>
+    // UMD版で読み込まれたグローバル変数からcreateClientを取得
+    const { createClient } = window.supabase
     
     const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
