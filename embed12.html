@@ -50,7 +50,10 @@
     </div>
   </main>
 
-  <script type="module">
+  <!-- Supabase UMD版 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+  
+  <script>
     // グローバルエラーハンドリング
     window.addEventListener('error', (e) => {
       console.error('❌ グローバルエラー:', e.message, e.error)
@@ -64,18 +67,9 @@
 
     console.log('🚀 スクリプト開始')
 
-    // Supabaseライブラリの読み込み（バージョン指定）
-    let createClient
-    try {
-      console.log('📦 Supabaseライブラリ読み込み中...')
-      const module = await import('https://unpkg.com/@supabase/supabase-js@2.39.0/dist/module/index.js')
-      createClient = module.createClient
-      console.log('✅ Supabaseライブラリ読み込み成功')
-    } catch(e) {
-      console.error('❌ Supabaseライブラリ読み込み失敗:', e)
-      document.getElementById('status').textContent = '❌ ライブラリ読み込みエラー: ' + e.message
-      throw e
-    }
+    // UMD版のSupabaseはグローバル変数 `supabase` として利用可能
+    const { createClient } = window.supabase
+    console.log('✅ Supabaseライブラリ読み込み成功')
 
     const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
@@ -83,7 +77,7 @@
     // 現在のURLを取得（本番環境でも動作するように）
     const getRedirectUrl = () => {
       // 本番環境のURLに置き換えてください
-      const production = 'https://ice256climber.github.io/studio-auth/embed12.html'
+      const production = 'https://your-domain.com/embed11.html'
       
       // 開発環境かどうかを判定
       const isDev = window.location.hostname === 'localhost' || 
@@ -95,10 +89,10 @@
     }
 
     // Supabaseクライアントの初期化
-    let supabase
+    let supabaseClient
     try {
       console.log('🔧 Supabaseクライアント初期化中...')
-      supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
         auth: {
           persistSession: true,
           autoRefreshToken: true,
@@ -109,7 +103,7 @@
         }
       })
       console.log('✅ Supabaseクライアント初期化成功')
-      window.supabase = supabase
+      window.supabase = supabaseClient
     } catch(e) {
       console.error('❌ Supabaseクライアント初期化失敗:', e)
       document.getElementById('status').textContent = '❌ 初期化エラー: ' + e.message
@@ -161,7 +155,7 @@
           console.log('✅ ユーザーセッション確認:', user.email)
           
           // user_profilesテーブルから役割を取得
-          const { data: userRow, error: profileError } = await supabase
+          const { data: userRow, error: profileError } = await supabaseClient
             .from('user_profiles')
             .select('role')
             .eq('user_id', user.id)
@@ -216,7 +210,7 @@
         const redirectUrl = getRedirectUrl()
         console.log('🔗 リダイレクトURL:', redirectUrl)
         
-        const { data, error } = await supabase.auth.signUp({ 
+        const { data, error } = await supabaseClient.auth.signUp({ 
           email, 
           password,
           options: {
@@ -231,7 +225,7 @@
         
         // user_profilesテーブルに役割を保存
         if (data?.user?.id) {
-          const { error: profileError } = await supabase
+          const { error: profileError } = await supabaseClient
             .from('user_profiles')
             .upsert({ 
               user_id: data.user.id, 
@@ -249,7 +243,7 @@
         // セッションがあるか確認
         if (data.session) {
           // すぐにログインできる場合（メール確認不要の設定）
-          const { data: userRow } = await supabase
+          const { data: userRow } = await supabaseClient
             .from('user_profiles')
             .select('role')
             .eq('user_id', data.user.id)
@@ -285,13 +279,13 @@
       showStatus('🔐 サインイン中...')
       
       try {
-        const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+        const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password })
         if (error) throw error
         
         const userId = data.user.id
         
         // user_profilesから役割を取得
-        const { data: userRow } = await supabase
+        const { data: userRow } = await supabaseClient
           .from('user_profiles')
           .select('role')
           .eq('user_id', userId)
@@ -321,7 +315,7 @@
       
       try {
         const redirectUrl = getRedirectUrl()
-        const { error } = await supabase.auth.resetPasswordForEmail(email, { 
+        const { error } = await supabaseClient.auth.resetPasswordForEmail(email, { 
           redirectTo: redirectUrl
         })
         if (error) throw error
@@ -337,7 +331,7 @@
     // サインアウト
     btnSignout.addEventListener('click', async () => {
       try {
-        await supabase.auth.signOut()
+        await supabaseClient.auth.signOut()
         afterEl.classList.add('hidden')
         showStatus('👋 サインアウトしました。')
       } catch (e) {
@@ -347,7 +341,7 @@
     })
 
     // 認証状態の変更を監視（無限ループ回避版）
-    supabase.auth.onAuthStateChange((event, session) => {
+    supabaseClient.auth.onAuthStateChange((event, session) => {
       console.log('🔄 認証イベント:', event, session ? 'セッションあり' : 'セッション無し')
       
       // refreshSession() を呼ばずに、直接UIを更新
