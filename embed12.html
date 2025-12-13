@@ -54,20 +54,9 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
   
   <script>
-    // グローバルエラーハンドリング
-    window.addEventListener('error', (e) => {
-      console.error('❌ グローバルエラー:', e.message, e.error)
-      document.getElementById('status').textContent = 'エラー: ' + e.message
-    })
-
-    window.addEventListener('unhandledrejection', (e) => {
-      console.error('❌ Promise拒否:', e.reason)
-      document.getElementById('status').textContent = 'エラー: ' + e.reason
-    })
-
     console.log('🚀 スクリプト開始')
 
-    // UMD版のSupabaseはグローバル変数 `supabase` として利用可能
+    // UMD版のSupabaseはグローバル変数として利用可能
     const { createClient } = window.supabase
     console.log('✅ Supabaseライブラリ読み込み成功')
 
@@ -76,39 +65,27 @@
 
     // 現在のURLを取得（本番環境でも動作するように）
     const getRedirectUrl = () => {
-      // 本番環境のURLに置き換えてください
-      const production = 'https://your-domain.com/embed11.html'
-      
-      // 開発環境かどうかを判定
+      const production = 'https://ice256climber.github.io/studio-auth/embed12.html'
       const isDev = window.location.hostname === 'localhost' || 
                     window.location.hostname === '127.0.0.1' ||
                     window.location.hostname.includes('192.168')
-      
-      // 開発環境の場合は現在のURLを使用、本番環境では固定URLを使用
       return isDev ? window.location.origin + window.location.pathname : production
     }
 
     // Supabaseクライアントの初期化
-    let supabaseClient
-    try {
-      console.log('🔧 Supabaseクライアント初期化中...')
-      supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-          storage: window.localStorage,
-          storageKey: 'supabase.auth.token',
-          flowType: 'pkce'
-        }
-      })
-      console.log('✅ Supabaseクライアント初期化成功')
-      window.supabase = supabaseClient
-    } catch(e) {
-      console.error('❌ Supabaseクライアント初期化失敗:', e)
-      document.getElementById('status').textContent = '❌ 初期化エラー: ' + e.message
-      throw e
-    }
+    console.log('🔧 Supabaseクライアント初期化中...')
+    const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+        storage: window.localStorage,
+        storageKey: 'supabase.auth.token',
+        flowType: 'pkce'
+      }
+    })
+    console.log('✅ Supabaseクライアント初期化成功')
+    window.supabaseClient = supabaseClient
 
     const statusEl = document.getElementById('status')
     const btnSignin = document.getElementById('btn-signin')
@@ -127,33 +104,21 @@
       console.log('📌 Status:', msg)
     }
 
-    async function refreshSession() {
-      try {
-        // URL内のトークンをチェック（メール認証後のリダイレクト）
-        const hashParams = new URLSearchParams(window.location.hash.substring(1))
-        const accessToken = hashParams.get('access_token')
+    function showSignedIn(email, role) {
+      afterEl.classList.remove('hidden')
+      welcomeTitle.innerText = role === 'teacher' ? '👨‍🏫 先生ようこそ！' : '👨‍🎓 生徒さんようこそ！'
+      welcomeBody.innerText = `ログイン: ${email}\n役割: ${role}`
+      showStatus('✅ ログイン済み')
+    }
+
+    // セッション情報から直接UI更新（無限ループ回避）
+    async function updateUIFromSession(session) {
+      console.log('🎨 UI更新:', session ? 'ログイン中' : '未ログイン')
+      
+      if (session?.user) {
+        const user = session.user
         
-        if (accessToken) {
-          console.log('✅ メール認証後のトークンを検出しました')
-          showStatus('📧 メール認証を処理中...')
-          
-          // URLからハッシュを削除してクリーンにする
-          window.history.replaceState(null, '', window.location.pathname)
-        }
-        
-        // セッションを取得
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession()
-        
-        if (sessionError) {
-          console.error('セッション取得エラー:', sessionError)
-          showStatus('サインインしていません。')
-          return null
-        }
-        
-        if (session?.user) {
-          const user = session.user
-          console.log('✅ ユーザーセッション確認:', user.email)
-          
+        try {
           // user_profilesテーブルから役割を取得
           const { data: userRow, error: profileError } = await supabaseClient
             .from('user_profiles')
@@ -167,13 +132,48 @@
           
           const role = userRow?.role || 'student'
           showSignedIn(user.email, role)
+        } catch(e) {
+          console.error('UI更新エラー:', e)
+          showSignedIn(user.email, 'student')
+        }
+      } else {
+        afterEl.classList.add('hidden')
+        showStatus('サインインしていません。')
+      }
+    }
+
+    async function refreshSession() {
+      try {
+        console.log('🔍 refreshSession 呼び出し')
+        
+        // URL内のトークンをチェック（メール認証後のリダイレクト）
+        const hashParams = new URLSearchParams(window.location.hash.substring(1))
+        const accessToken = hashParams.get('access_token')
+        
+        if (accessToken) {
+          console.log('✅ メール認証後のトークンを検出しました')
+          showStatus('📧 メール認証を処理中...')
+          window.history.replaceState(null, '', window.location.pathname)
+        }
+        
+        // セッションを取得
+        const { data: { session }, error: sessionError } = await supabaseClient.auth.getSession()
+        
+        if (sessionError) {
+          console.error('セッション取得エラー:', sessionError)
+          showStatus('サインインしていません。')
+          return null
+        }
+        
+        if (session?.user) {
+          console.log('✅ ユーザーセッション確認:', session.user.email)
+          await updateUIFromSession(session)
           
-          // メール認証後の場合は特別なメッセージ
           if (accessToken) {
             showStatus('✅ メール認証完了！ログインしました。')
           }
           
-          return user
+          return session.user
         } else {
           showStatus('サインインしていません。')
           return null
@@ -183,13 +183,6 @@
         showStatus('サインインしていません。')
         return null
       }
-    }
-
-    function showSignedIn(email, role) {
-      afterEl.classList.remove('hidden')
-      welcomeTitle.innerText = role === 'teacher' ? '👨‍🏫 先生ようこそ！' : '👨‍🎓 生徒さんようこそ！'
-      welcomeBody.innerText = `ログイン: ${email}\n役割: ${role}`
-      showStatus('✅ ログイン済み')
     }
 
     // サインアップ
@@ -214,10 +207,8 @@
           email, 
           password,
           options: {
-            data: {
-              role: role
-            },
-            emailRedirectTo: redirectUrl // ← ここが重要！
+            data: { role: role },
+            emailRedirectTo: redirectUrl
           }
         })
         
@@ -240,9 +231,7 @@
           }
         }
         
-        // セッションがあるか確認
         if (data.session) {
-          // すぐにログインできる場合（メール確認不要の設定）
           const { data: userRow } = await supabaseClient
             .from('user_profiles')
             .select('role')
@@ -253,8 +242,7 @@
           showSignedIn(data.user.email, userRole)
           showStatus('✅ 登録完了＆自動ログインしました')
         } else {
-          // メール確認が必要な場合
-          showStatus('✅ 登録完了！\n\n📧 確認メールを送信しました。\nメール内のリンクをクリックして認証を完了してください。\n\n認証後、自動的にこのページに戻ります。')
+          showStatus('✅ 登録完了！\n\n📧 確認メールを送信しました。\nメール内のリンクをクリックして認証を完了してください。')
         }
         
       } catch (e) {
@@ -319,7 +307,7 @@
           redirectTo: redirectUrl
         })
         if (error) throw error
-        showStatus('✅ リセットメールを送信しました。メール内のリンクをクリックしてください。')
+        showStatus('✅ リセットメールを送信しました。')
       } catch (e) {
         console.error('リセットエラー:', e)
         showStatus('❌ エラー: ' + (e.message || e))
@@ -340,11 +328,10 @@
       }
     })
 
-    // 認証状態の変更を監視（無限ループ回避版）
+    // 認証状態の変更を監視
     supabaseClient.auth.onAuthStateChange((event, session) => {
       console.log('🔄 認証イベント:', event, session ? 'セッションあり' : 'セッション無し')
       
-      // refreshSession() を呼ばずに、直接UIを更新
       if (event === 'SIGNED_IN' && session) {
         updateUIFromSession(session)
       } else if (event === 'SIGNED_OUT') {
@@ -354,7 +341,7 @@
     })
 
     // 初期化
-    (async () => {
+    ;(async () => {
       console.log('🚀 アプリ初期化開始')
       await refreshSession()
       console.log('✅ 初期化完了')
