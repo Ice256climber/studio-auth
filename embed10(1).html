@@ -13,30 +13,35 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
 .top{display:flex;gap:12px;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap}
 .small{font-size:13px;color:var(--muted)}
 .palette{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-.subject-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;color:#fff;font-weight:700;cursor:pointer;border:0;transition:all 0.2s;box-shadow:0 2px 4px rgba(0,0,0,0.1)}
-.subject-btn:hover{opacity:0.9;transform:translateY(-1px)}
-.subject-btn.active{outline:3px solid var(--accent);outline-offset:3px}
-.subject-icon{width:20px;height:20px;border-radius:50%;border:1px solid #fff;background:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;color:#0f1724}
-.time-display{font-size:48px;font-weight:800;text-align:center;margin:20px 0;letter-spacing:-1px}
-.buttons{display:flex;gap:12px;flex-wrap:wrap}
-.buttons button{flex:1;padding:16px 20px;border-radius:var(--radius);font-size:16px;font-weight:700;cursor:pointer;border:0;transition:background 0.2s}
-#startBtn{background:var(--accent);color:#fff}
-#startBtn:hover{background:#354fb8}
-#startBtn.running{background:#dc2626}
-#startBtn.running:hover{background:#b91c1c}
-#resetBtn{background:#f3f4f6;color:#0f1724}
-#resetBtn:hover{background:#e5e7eb}
-.date-section{display:flex;gap:8px;align-items:center;margin-top:12px}
-.date-section label{font-size:14px;color:var(--muted);width:60px}
-.date-section input[type="date"],.date-section input[type="time"]{padding:8px;border:1px solid #e5e7eb;border-radius:8px;font-size:14px;flex-grow:1}
-.date-section button{padding:8px 12px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;cursor:pointer}
-.date-section button:hover{background:#e5e7eb}
-.timer-status{font-size:14px;text-align:center;margin-top:12px;height:20px}
-.log-card{margin-top:20px;padding:16px;background:#fff;border-radius:var(--radius);box-shadow:0 4px 12px rgba(0,0,0,0.04);max-height:300px;overflow-y:auto}
-.log-item{padding:8px 0;border-bottom:1px dashed #f3f4f6;display:flex;justify-content:space-between}
-.log-item:last-child{border-bottom:none}
-.log-time{font-weight:600;color:var(--accent)}
-.log-subject{font-size:13px}
+.subject-btn{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;color:#fff;font-weight:700;cursor:pointer;border:0;transition:all 0.2s}
+.subject-btn:hover{transform:translateY(-2px)}
+.grid-wrap{overflow:auto;margin-top:12px}
+.hours-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(72px,1fr);padding:12px}
+.hour-col{min-width:72px;padding:6px}
+.hour-header{font-size:12px;color:var(--muted);text-align:center;margin-bottom:6px}
+.hour-cell{height:72px;border-radius:10px;border:1px solid rgba(16,24,40,0.04);position:relative;overflow:hidden;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg,#fff,#fbfbff);cursor:pointer}
+.hour-cell:hover{border-color:var(--accent)}
+.segments{display:flex;height:100%;width:100%}
+.segment{flex:1;position:relative}
+.fill{position:absolute;left:0;top:0;bottom:0;width:0;transition:width .2s linear}
+.overlay{position:absolute;left:0;right:0;bottom:6px;text-align:center;font-weight:700;color:rgba(0,0,0,0.65);z-index:3;font-size:11px}
+.cell-label{position:absolute;left:6px;top:6px;font-weight:700;color:rgba(0,0,0,0.75);z-index:4;font-size:11px}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;align-items:center}
+.legend .item{display:flex;align-items:center;gap:8px}
+.legend input[type="color"]{border:0;padding:0;width:34px;height:28px;border-radius:6px;cursor:pointer}
+.btn{background:var(--accent);color:#fff;padding:8px 12px;border-radius:10px;border:0;cursor:pointer;font-weight:700;transition:all 0.2s}
+.btn:hover{opacity:0.9}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid rgba(68,97,242,0.12)}
+.btn.ghost:hover{background:rgba(68,97,242,0.05)}
+.add-subject{display:flex;gap:8px;margin-top:8px;align-items:center}
+.auth-status{padding:10px;border-radius:8px;background:#f0f9ff;border:1px solid #bae6fd;font-size:13px}
+.auth-status.logged-out{background:#fef2f2;border-color:#fecaca}
+.auth-status.checking{background:#fffbeb;border-color:#fde68a}
+.compact-day{background:#fff;border-radius:10px;padding:8px;border:1px solid rgba(0,0,0,0.04);margin-top:8px}
+.compact-grid{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(48px,1fr);gap:6px;align-items:start}
+.compact-hour{min-width:48px}
+.compact-cell{height:44px;border-radius:8px;border:1px solid rgba(16,24,40,0.04);position:relative;overflow:hidden}
+@media(max-width:900px){.hour-cell{height:56px}}
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
@@ -44,454 +49,745 @@ body{font-family:Inter,system-ui,'Noto Sans JP',sans-serif;background:var(--bg);
 </head>
 <body>
 <div class="wrap">
-  <div class="card">
-    <div class="top">
-      <div>
-        <h2 style="margin:0">学習内容</h2>
-        <div class="small">学習開始前に選択してください</div>
-        <div class="palette" id="subjectPalette">
+  <h1>デジタル版学習実態調査</h1>
+
+  <div class="top">
+    <div class="card" style="min-width:480px">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <div><div class="small">日付</div><input type="date" id="dateInput"></div>
+        <div><div class="small">開始時刻</div><input type="time" id="startTimeInput"></div>
+        <div style="margin-left:8px"><div class="small">操作</div>
+          <div style="display:flex;gap:8px;margin-top:6px">
+            <button id="startBtn" class="btn">開始</button>
+            <button id="resetBtn" class="btn ghost">リセット</button>
+            <button id="setNowBtn" class="btn ghost">今に</button>
           </div>
+        </div>
       </div>
-      <div>
-        <button id="authBtn" class="subject-btn" style="background:#0f172a">🔑 サインイン</button>
-        <div class="small" id="userIdDisplay" style="margin-top:5px;text-align:right">ユーザーID: 未認証</div>
+      <div style="display:flex;gap:16px;margin-top:10px;align-items:center">
+        <div class="small">経過(セッション)<div id="elapsedLabel" style="font-weight:800">00:00:00</div></div>
+        <div class="small">今日合計<div id="todayTotalLabel" style="font-weight:800">0:00:00</div></div>
+      </div>
+    </div>
+
+    <div class="card" style="min-width:280px">
+      <div class="small" style="margin-bottom:8px">アカウント</div>
+      <div id="authStatus" class="auth-status checking">認証確認中...</div>
+      <button id="refreshAuthBtn" class="btn ghost" style="margin-top:8px;width:100%">認証状態を再確認</button>
+    </div>
+
+    <div class="card" style="min-width:360px">
+      <div class="small">教科パレット</div>
+      <div id="palette" class="palette"></div>
+      <div id="legend" class="legend"></div>
+      <div class="add-subject">
+        <input id="newSubjectName" placeholder="新しい教科名" style="padding:8px;border-radius:8px;border:1px solid #e5e7eb;flex:1" />
+        <input id="newSubjectColor" type="color" value="#7c3aed" />
+        <button id="addSubjectBtn" class="btn">追加</button>
+      </div>
+      <div class="small" style="margin-top:12px">直近1週間</div>
+      <div id="weeklyList" class="small" style="margin-top:6px"></div>
+      <div id="weeklyTotalBox" style="display:none;margin-top:8px" class="small"><strong>週合計:</strong> <span id="weeklyTotalLabel">0:00:00</span></div>
+      <div id="openedDays"></div>
+      <div class="card" style="margin-top:10px;padding:10px">
+        <div class="small">日別合計(折れ線)</div>
+        <div id="weeklyChart" style="width:100%;height:160px;margin-top:8px"></div>
       </div>
     </div>
   </div>
 
   <div class="card">
-    <div class="date-section">
-      <label for="dateInput">日付</label>
-      <input type="date" id="dateInput">
-      <label for="startTimeInput">開始時刻</label>
-      <input type="time" id="startTimeInput">
-      <button id="setNowBtn">今</button>
-    </div>
-
-    <div class="time-display" id="elapsedDisplay">00:00:00</div>
-    <div class="timer-status" id="timerStatus">停止中</div>
-    
-    <div class="buttons">
-      <button id="startBtn">開始</button>
-      <button id="resetBtn">リセット</button>
-    </div>
-  </div>
-
-  <div id="logCard" class="log-card" style="display:none;">
-    <h3 style="margin:0 0 10px 0;font-size:16px">本日の記録</h3>
-    <div id="dailyLog"></div>
+    <div class="small">時間表示と塗り</div>
+    <div class="grid-wrap"><div id="hoursGrid" class="hours-grid"></div></div>
   </div>
 </div>
 
 <script>
-  // UMD版で読み込まれたグローバル変数からcreateClientを取得
-  const { createClient } = window.supabase
+// UMD版で読み込まれたグローバル変数からcreateClientを取得
+const { createClient } = window.supabase
 
-  const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-  window.supabase = supabase // グローバルアクセス用に公開
+const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
 
-  // DOM要素
-  const elapsedDisplay = document.getElementById('elapsedDisplay')
-  const timerStatus = document.getElementById('timerStatus')
-  const startBtn = document.getElementById('startBtn')
-  const resetBtn = document.getElementById('resetBtn')
-  const dateInput = document.getElementById('dateInput')
-  const startTimeInput = document.getElementById('startTimeInput')
-  const setNowBtn = document.getElementById('setNowBtn')
-  const subjectPalette = document.getElementById('subjectPalette')
-  const userIdDisplay = document.getElementById('userIdDisplay')
-  const authBtn = document.getElementById('authBtn')
-  const dailyLogEl = document.getElementById('dailyLog')
-  const logCard = document.getElementById('logCard')
-
-  // 定数
-  const SUBJECTS = [
-    { name: '数学', color: '#4461f2', icon: 'M' },
-    { name: '英語', color: '#10b981', icon: 'E' },
-    { name: '国語', color: '#f59e0b', icon: '国' },
-    { name: '理科', color: '#ef4444', icon: '理' },
-    { name: '社会', color: '#8b5cf6', icon: '社' },
-    { name: 'その他', color: '#6b7280', icon: '他' }
-  ]
-  const LOCAL_STORAGE_KEY = 'studio_timer_state'
-  const TIME_THRESHOLD_MS = 1000 // 1秒未満は保存しない
-
-  // 状態管理
-  const state = {
-    timer: {
-      running: false,
-      startTime: null,
-      sessionAccumulatedMs: 0,
-      _lastTick: null
-    },
-    selectedSubject: SUBJECTS[0],
-    user: null, // Supabase Auth user object
-    dailyLog: [] // その日の記録
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storage: window.localStorage,
+    storageKey: 'supabase.auth.token',
+    flowType: 'pkce'
   }
+})
+window.supabase = supabase
 
-  // --- ユーティリティ関数 ---
+const SEG_MIN = 5, SEG_MS = SEG_MIN * 60000, SEG_H = 60 / SEG_MIN
+const STORAGE = 'studio_v4'
+let state = { hourSegments: {}, colors: {}, timer: { running:false, sessionAccumulatedMs:0, _lastTick:null }}
+let SUBJECTS = [
+  { key:'jp', name:'国語', color:'#FF6B6B' },
+  { key:'math', name:'数学', color:'#4D9FEE' },
+  { key:'sci', name:'理科', color:'#47C88E' },
+  { key:'soc', name:'社会', color:'#F6C85F' },
+  { key:'en', name:'英語', color:'#9B7BFF' },
+]
+let sel = SUBJECTS[0].key
+let selectedDays = new Set()
+let currentUser = null
 
-  function fmt(ms) {
-    const totalSeconds = Math.floor(ms / 1000)
-    const hours = Math.floor(totalSeconds / 3600)
-    const minutes = Math.floor((totalSeconds % 3600) / 60)
-    const seconds = totalSeconds % 60
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+const dateInput = document.getElementById('dateInput')
+const startTimeInput = document.getElementById('startTimeInput')
+const startBtn = document.getElementById('startBtn')
+const resetBtn = document.getElementById('resetBtn')
+const setNowBtn = document.getElementById('setNowBtn')
+const hoursGrid = document.getElementById('hoursGrid')
+const palette = document.getElementById('palette')
+const legend = document.getElementById('legend')
+const elapsedLabel = document.getElementById('elapsedLabel')
+const todayTotalLabel = document.getElementById('todayTotalLabel')
+const authStatus = document.getElementById('authStatus')
+const refreshAuthBtn = document.getElementById('refreshAuthBtn')
+const addSubjectBtn = document.getElementById('addSubjectBtn')
+const newSubjectName = document.getElementById('newSubjectName')
+const newSubjectColor = document.getElementById('newSubjectColor')
+const weeklyList = document.getElementById('weeklyList')
+const weeklyTotalBox = document.getElementById('weeklyTotalBox')
+const weeklyTotalLabel = document.getElementById('weeklyTotalLabel')
+const openedDays = document.getElementById('openedDays')
+const weeklyChart = document.getElementById('weeklyChart')
+
+const fmt = ms => {
+  if(!ms) return '0:00:00'
+  let s = Math.floor(ms/1000), h = Math.floor(s/3600)
+  s = s % 3600
+  const m = Math.floor(s/60), sec = s%60
+  return `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`
+}
+
+const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+const todayY = () => ymd(new Date())
+const timeIn = d => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+
+function ensureDay(dayStr){ 
+  if(!state.hourSegments[dayStr]) {
+    state.hourSegments[dayStr] = Array.from({length:24}, ()=> Array.from({length:SEG_H}, ()=> ({subject:'', filledMs:0})))
   }
+}
 
-  function timeIn(d) {
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+function shade(hex, percent){ 
+  const h = hex.replace('#','')
+  const r = parseInt(h.substring(0,2),16), g = parseInt(h.substring(2,4),16), b = parseInt(h.substring(4,6),16)
+  const t = percent < 0 ? 0 : 255, p = Math.abs(percent)/100
+  const R = Math.round((t-r)*p)+r, G = Math.round((t-g)*p)+g, B = Math.round((t-b)*p)+b
+  return `rgb(${R}, ${G}, ${B})`
+}
+
+function lastNDates(endDateStr, n){ 
+  const [y,m,d] = endDateStr.split('-').map(x=>parseInt(x,10))
+  const end = new Date(y, m-1, d), arr=[]
+  for(let i=n-1;i>=0;i--){ 
+    const dd = new Date(end)
+    dd.setDate(end.getDate()-i)
+    arr.push(ymd(dd))
   }
+  return arr
+}
 
-  function todayYMD() {
-    const d = new Date()
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-  }
+function weekdayName(dateStr){ 
+  const d = new Date(dateStr)
+  return ['日','月','火','水','木','金','土'][d.getDay()]
+}
 
-  // --- 状態の永続化 ---
+function loadLocal(){
+  try{ 
+    const raw = localStorage.getItem(STORAGE)
+    if(raw){ state = Object.assign({}, state, JSON.parse(raw)) }
+  }catch(e){ console.warn('loadLocal', e) }
+  SUBJECTS.forEach(s => { if(!state.colors[s.key]) state.colors[s.key] = s.color })
+}
 
-  function saveLocal() {
-    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({
-      timer: {
-        running: state.timer.running,
-        sessionAccumulatedMs: state.timer.sessionAccumulatedMs,
-        // runningがtrueの場合のみstartTimeと_lastTickを保存
-        startTime: state.timer.running ? state.timer.startTime : null,
-        _lastTick: state.timer.running ? state.timer._lastTick : null
-      },
-      selectedSubject: state.selectedSubject,
-      date: dateInput.value,
-      startTime: startTimeInput.value
-    }))
-  }
+function saveLocal(){ 
+  try{ localStorage.setItem(STORAGE, JSON.stringify(state)) }catch(e){ console.warn('saveLocal', e) }
+}
 
-  function loadLocal() {
-    const saved = localStorage.getItem(LOCAL_STORAGE_KEY)
-    if (saved) {
-      const data = JSON.parse(saved)
-      state.timer.sessionAccumulatedMs = data.timer.sessionAccumulatedMs || 0
-      state.selectedSubject = data.selectedSubject || SUBJECTS[0]
-      dateInput.value = data.date || todayYMD()
-      startTimeInput.value = data.startTime || timeIn(new Date())
-
-      // 実行中の状態を復元
-      if (data.timer.running && data.timer._lastTick) {
-        const lastTickTime = new Date(data.timer._lastTick).getTime()
-        const now = Date.now()
-        // 停止中に経過した時間を加算
-        const elapsedSincePause = now - lastTickTime
-        state.timer.sessionAccumulatedMs += elapsedSincePause
-        
-        // タイマーを再開
-        state.timer.running = true
-        state.timer.startTime = data.timer.startTime
-        startTicking()
-      } else {
-        state.timer.running = false
-      }
-    } else {
-      dateInput.value = todayYMD()
-      startTimeInput.value = timeIn(new Date())
-    }
-  }
-
-  // --- レンダリング ---
-
-  function renderSubjects() {
-    subjectPalette.innerHTML = ''
-    SUBJECTS.forEach(subject => {
-      const btn = document.createElement('button')
-      btn.className = 'subject-btn'
-      btn.style.backgroundColor = subject.color
-      btn.textContent = subject.name
-      
-      const icon = document.createElement('span')
-      icon.className = 'subject-icon'
-      icon.textContent = subject.icon
-      btn.prepend(icon)
-
-      if (state.selectedSubject.name === subject.name) {
-        btn.classList.add('active')
-      }
-
-      btn.addEventListener('click', () => {
-        state.selectedSubject = subject
-        renderSubjects()
-        saveLocal()
-      })
-      subjectPalette.appendChild(btn)
-    })
-  }
-
-  function updateElapsedDisplay() {
-    elapsedDisplay.textContent = fmt(state.timer.sessionAccumulatedMs)
-  }
-
-  function updateStatus(message) {
-    timerStatus.textContent = message
-  }
-
-  function renderLog() {
-    if (!state.user) {
-      logCard.style.display = 'none'
-      return
-    }
-
-    logCard.style.display = 'block'
-    dailyLogEl.innerHTML = ''
-    
-    if (state.dailyLog.length === 0) {
-      dailyLogEl.innerHTML = '<div style="color:var(--muted);text-align:center;padding:10px">本日の記録はありません。</div>'
-      return
-    }
-
-    state.dailyLog
-      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-      .forEach(log => {
-        const item = document.createElement('div')
-        item.className = 'log-item'
-        
-        const time = fmt(log.study_time_ms)
-        const datePart = new Date(log.created_at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })
-        
-        item.innerHTML = `
-          <div class="log-subject" style="color:${log.subject_color}">${log.subject_name}</div>
-          <div>
-            <span class="log-time">${time}</span>
-            <span class="small" style="margin-left:8px">(${datePart} 終了)</span>
-          </div>
-        `
-        dailyLogEl.appendChild(item)
-      })
-  }
-
-  function renderAuth() {
-    if (state.user) {
-      userIdDisplay.textContent = `ID: ${state.user.id.slice(0, 8)}...`
-      authBtn.textContent = '👋 サインアウト'
-      authBtn.style.backgroundColor = '#f97316'
-      authBtn.onclick = signOut
-    } else {
-      userIdDisplay.textContent = 'ユーザーID: 未認証'
-      authBtn.textContent = '🔑 サインイン'
-      authBtn.style.backgroundColor = '#0f172a'
-      authBtn.onclick = signIn
-    }
-  }
-
-  function renderAll() {
-    updateElapsedDisplay()
-    updateButtonStyles()
-    renderSubjects()
-    renderLog()
-    renderAuth()
-  }
-
-  // --- 認証とログ ---
-
-  async function fetchDailyLog() {
-    if (!state.user) {
-      state.dailyLog = []
-      return
-    }
-
-    try {
-      const { data, error } = await supabase
-        .from('study_records')
-        .select('*')
-        .eq('user_id', state.user.id)
-        .eq('study_date', dateInput.value) // 選択された日付のログを取得
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      state.dailyLog = data
-    } catch (e) {
-      console.error('❌ ログ取得エラー:', e)
-      state.dailyLog = []
-    }
-    renderLog()
-  }
-
-  function signIn() {
-    window.open('embed12.html', '_blank') // 認証ページを開く
-  }
-
-  async function signOut() {
-    try {
-      await supabase.auth.signOut()
-      // onAuthStateChangeで処理される
-    } catch (e) {
-      console.error('サインアウトエラー:', e)
-      alert('サインアウトに失敗しました')
-    }
-  }
-
-  // --- タイマー処理 ---
-
-  function startTicking() {
-    if (window._tickI) clearInterval(window._tickI)
-    
-    // 100msごとに更新して、より滑らかにする
-    window._tickI = setInterval(() => {
-      if (!state.timer.running) {
-        clearInterval(window._tickI)
-        return
-      }
-      
-      const now = Date.now()
-      if (state.timer._lastTick) {
-        const delta = now - state.timer._lastTick
-        state.timer.sessionAccumulatedMs += delta
-      }
-      state.timer._lastTick = now
-      updateElapsedDisplay()
-    }, 100)
-    updateStatus('計測中...')
-  }
-
-  function startTimer() {
-    if (state.timer.running) return
-    if (!state.user) {
-      alert('学習を開始するには、まずサインインしてください。')
-      signIn()
-      return
-    }
-    
-    // タイマーをリセットしなくても、ポーズ状態から再開できるように
-    if (state.timer.sessionAccumulatedMs === 0) {
-      // セッションが0から開始する場合は、開始時刻と日付を再設定
-      dateInput.value = todayYMD()
-      startTimeInput.value = timeIn(new Date())
-    }
-
-    state.timer.running = true
-    state.timer._lastTick = Date.now()
-    startTicking()
-    updateButtonStyles()
-    saveLocal()
-  }
-
-  async function pauseTimer() {
-    if (!state.timer.running) return
-    state.timer.running = false
-    clearInterval(window._tickI)
-    
-    updateStatus('停止中')
-    updateButtonStyles()
-    saveLocal()
-
-    const studyTimeMs = state.timer.sessionAccumulatedMs
-    
-    if(studyTimeMs >= TIME_THRESHOLD_MS){
-      try{
-        const user = state.user
-        if(!user){
-          alert('サインインされていません。データ保存をスキップしました。')
-          return
-        }
-        
-        // データの保存
-        const { error } = await supabase
-          .from('study_records')
-          .insert({
-            user_id: user.id,
-            study_date: dateInput.value,
-            start_time: startTimeInput.value,
-            study_time_ms: studyTimeMs,
-            subject_name: state.selectedSubject.name,
-            subject_color: state.selectedSubject.color
-          })
-          
-        if(error){
-          console.error('❌ Supabase保存エラー:', error)
-          alert('データ保存に失敗しました: ' + error.message)
-        } else {
-          console.log('✅ Supabase保存成功')
-          alert(`お疲れ様でした!\n${fmt(studyTimeMs)} を記録しました。`)
-          
-          // 記録成功後、タイマーをリセット
-          resetTimer(false) // 確認メッセージなしでリセット
-          await fetchDailyLog() // ログを更新
-        }
-      }catch(e){
-        console.error('❌ 保存処理の例外:', e)
-        alert('データ保存中にエラーが発生しました')
-      }
-    } else {
-      console.log('⭐️ 1秒未満のため保存スキップ')
-      // 保存をスキップした場合もリセット
-      resetTimer(false) 
-    }
-    console.log('⏸️ タイマー停止処理完了')
-  }
-
-  function resetTimer(confirmRequired = true){ 
-    if(confirmRequired && !confirm('タイマーをリセットします。よろしいですか?')) return
-    
-    state.timer.running = false
-    clearInterval(window._tickI)
-    state.timer._lastTick = null
-    state.timer.sessionAccumulatedMs = 0
-    updateElapsedDisplay()
-    updateButtonStyles()
-    saveLocal()
-    renderAll()
-    updateStatus('停止中')
-  }
-
-  function onSetNow(){ 
-    startTimeInput.value = timeIn(new Date())
-  }
-
-  function updateButtonStyles(){ 
-    if(state.timer.running){ 
-      startBtn.textContent = '停止'
-      startBtn.classList.add('running')
-    } else { 
-      startBtn.textContent = '開始'
-      startBtn.classList.remove('running')
-    }
-  }
-
-  // --- イベントリスナー ---
+async function checkAuth(){
+  console.log('🔍 認証確認開始...')
+  authStatus.className = 'auth-status checking'
+  authStatus.textContent = '認証確認中...'
   
-  startBtn.addEventListener('click', ()=> {
-    if(state.timer.running) pauseTimer()
-    else startTimer()
-  })
-  resetBtn.addEventListener('click', () => resetTimer())
-  setNowBtn.addEventListener('click', onSetNow)
-  dateInput.addEventListener('change', ()=> {
-    saveLocal()
-    fetchDailyLog() // 日付変更でログを再取得
-  })
-  
-  // --- 初期化 ---
-
-  ;(async function init(){
-    loadLocal()
+  try{
+    // まずセッションを取得してトークンのリフレッシュを試みる
+    console.log('📋 セッション取得中...')
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
     
-    // 認証状態の監視
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        state.user = session.user
-      } else {
-        state.user = null
-      }
-      renderAuth()
-      fetchDailyLog() // 認証状態が変わったらログを再取得
+    if(sessionError){
+      console.warn('⚠️ セッション取得警告:', sessionError.message)
+    }
+    
+    if(sessionData?.session){
+      console.log('✅ セッション発見:', {
+        expires_at: sessionData.session.expires_at,
+        user_id: sessionData.session.user?.id
+      })
+    } else {
+      console.log('ℹ️ セッション無し')
+    }
+
+    // ユーザー情報を取得
+    console.log('👤 ユーザー情報取得中...')
+    const { data: userData, error: userError } = await supabase.auth.getUser()
+    
+    if(userError){
+      console.error('❌ ユーザー取得エラー:', userError.message, userError)
+      throw userError
+    }
+    
+    const user = userData?.user
+    
+    if(user){
+      currentUser = user
+      authStatus.className = 'auth-status'
+      authStatus.innerHTML = `✅ ログイン中: ${user.email}<br><small>ID: ${user.id.slice(0,8)}...</small>`
+      console.log('✅ ログイン済み:', user.email)
+    } else {
+      currentUser = null
+      authStatus.className = 'auth-status logged-out'
+      authStatus.textContent = '未ログイン'
+      console.log('⚠️ 未ログイン')
+    }
+  }catch(e){
+    console.error('❌ 認証エラー (詳細):', {
+      message: e.message,
+      name: e.name,
+      stack: e.stack
     })
-    
-    // 初回ロード時のユーザー情報を取得
-    const { data: { user } } = await supabase.auth.getUser()
-    state.user = user
-    
-    renderAll()
-    fetchDailyLog()
+    currentUser = null
+    authStatus.className = 'auth-status logged-out'
+    authStatus.innerHTML = `認証エラー<br><small>${e.message}</small>`
+  }
+}
 
-  })()
+// 認証状態変更の監視
+supabase.auth.onAuthStateChange((event, session) => {
+  console.log('🔄 認証変更イベント:', event, session ? 'セッションあり' : 'セッション無し')
+  checkAuth()
+})
+
+// 手動リフレッシュボタン
+refreshAuthBtn.addEventListener('click', async () => {
+  console.log('🔄 手動認証リフレッシュ')
+  await checkAuth()
+})
+
+function buildPalette(){
+  palette.innerHTML = ''
+  legend.innerHTML = ''
+  SUBJECTS.forEach((s) => {
+    if(!state.colors[s.key]) state.colors[s.key] = s.color
+    const btn = document.createElement('button')
+    btn.className = 'subject-btn'
+    btn.dataset.key = s.key
+    btn.style.background = state.colors[s.key]
+    btn.innerHTML = `<div style="width:14px;height:14px;border-radius:50%;background:${shade(state.colors[s.key],-8)}"></div><div>${s.name}</div>`
+    btn.addEventListener('click', ()=>{ sel = s.key; highlightSelected() })
+    palette.appendChild(btn)
+    const item = document.createElement('div')
+    item.className='item'
+    item.style.display='flex'
+    item.style.alignItems='center'
+    item.style.gap='8px'
+    const sw = document.createElement('div')
+    sw.style.width='18px'
+    sw.style.height='12px'
+    sw.style.borderRadius='6px'
+    sw.style.background=state.colors[s.key]
+    const lab = document.createElement('div')
+    lab.textContent = s.name
+    const colorInp = document.createElement('input')
+    colorInp.type='color'
+    colorInp.value = state.colors[s.key]
+    colorInp.addEventListener('input', (e)=>{ 
+      state.colors[s.key] = e.target.value
+      saveLocal()
+      buildPalette()
+      renderAll()
+    })
+    item.appendChild(sw)
+    item.appendChild(lab)
+    item.appendChild(colorInp)
+    legend.appendChild(item)
+  })
+  highlightSelected()
+}
+
+function highlightSelected(){ 
+  palette.querySelectorAll('.subject-btn').forEach(b=>{ 
+    b.style.boxShadow = b.dataset.key === sel ? '0 6px 20px rgba(2,6,23,0.12)' : 'none'
+  })
+}
+
+addSubjectBtn.addEventListener('click', ()=>{ 
+  const name = (newSubjectName.value||'').trim()
+  const color = newSubjectColor.value || '#7c3aed'
+  if(!name) return alert('教科名を入力してください')
+  let key = name.toLowerCase().replace(/[^\w]+/g,'_')
+  let base = key, suffix = 1
+  while(SUBJECTS.some(s=>s.key === key)){ key = base + '_' + (suffix++) }
+  SUBJECTS.push({ key, name, color })
+  state.colors[key] = color
+  newSubjectName.value = ''
+  buildPalette()
+  saveLocal()
+})
+
+function buildGrid(){ 
+  hoursGrid.innerHTML = ''
+  for(let h=0; h<24; h++){
+    const col = document.createElement('div')
+    col.className='hour-col'
+    col.dataset.hour = h
+    const header = document.createElement('div')
+    header.className='hour-header'
+    header.textContent = `${h}:00`
+    const cell = document.createElement('div')
+    cell.className='hour-cell'
+    cell.addEventListener('click', ()=> onHourClick(h))
+    col.appendChild(header)
+    col.appendChild(cell)
+    hoursGrid.appendChild(col)
+  }
+}
+
+function renderCell(dateStr, hour){ 
+  ensureDay(dateStr)
+  const segs = state.hourSegments[dateStr][hour]
+  const col = hoursGrid.querySelector(`.hour-col[data-hour='${hour}']`)
+  if(!col) return
+  const cell = col.querySelector('.hour-cell')
+  cell.innerHTML = ''
+  const wrap = document.createElement('div')
+  wrap.className='segments'
+  for(let i=0;i<SEG_H;i++){ 
+    const s = segs[i]
+    const segDiv = document.createElement('div')
+    segDiv.className='segment'
+    const fill = document.createElement('div')
+    fill.className='fill'
+    const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS))
+    fill.style.width = (pct*100) + '%'
+    if(s.subject && state.colors[s.subject]) {
+      fill.style.background = `linear-gradient(90deg, ${state.colors[s.subject]}, ${shade(state.colors[s.subject],-8)})`
+    }
+    segDiv.appendChild(fill)
+    wrap.appendChild(segDiv)
+  }
+  const label = document.createElement('div')
+  label.className='cell-label'
+  const allSubjs = new Set(segs.map(s=>s.subject||''))
+  if(allSubjs.size === 1 && !allSubjs.has('')) {
+    label.textContent = SUBJECTS.find(x=>x.key===segs[0].subject)?.name || ''
+  }
+  const overlay = document.createElement('div')
+  overlay.className='overlay'
+  const totalFilled = segs.reduce((a,b)=>a+(b.filledMs||0),0)
+  overlay.textContent = (totalFilled >= 3600000) ? '完了' : ''
+  cell.appendChild(wrap)
+  cell.appendChild(label)
+  cell.appendChild(overlay)
+}
+
+function renderAll(){ 
+  if(!dateInput.value) dateInput.value = todayY()
+  const dateStr = dateInput.value
+  ensureDay(dateStr)
+  for(let h=0; h<24; h++) renderCell(dateStr,h)
+  renderTotals()
+  updateElapsedDisplay()
+  updateButtonStyles()
+  saveLocal()
+}
+
+function onHourClick(hour){ 
+  const dateStr = dateInput.value
+  ensureDay(dateStr)
+  const segs = state.hourSegments[dateStr][hour]
+  let changed = false
+  for(let i=0;i<SEG_H;i++){ 
+    if(segs[i].filledMs === 0 && segs[i].subject !== sel){ 
+      segs[i].subject = sel
+      changed = true
+    }
+  }
+  if(changed) renderAll()
+}
+
+function renderTotals(){ 
+  const dateStr = dateInput.value
+  ensureDay(dateStr)
+  const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0)
+  todayTotalLabel.textContent = fmt(todayMs)
+  const days = lastNDates(dateStr, 7)
+  weeklyList.innerHTML = ''
+  let weeklyTotalMs = 0
+  days.forEach(d=>{ 
+    ensureDay(d)
+    const total = state.hourSegments[d].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0)
+    weeklyTotalMs += total
+    const div = document.createElement('div')
+    div.style.display='flex'
+    div.style.justifyContent='space-between'
+    div.style.padding='6px'
+    div.style.borderRadius='8px'
+    div.style.background='#fbfbff'
+    div.style.cursor='pointer'
+    div.style.marginBottom='6px'
+    const left = document.createElement('div')
+    left.textContent = `${d} (${weekdayName(d)})`
+    const right = document.createElement('div')
+    right.textContent = fmt(total)
+    div.appendChild(left)
+    div.appendChild(right)
+    div.addEventListener('click', ()=>{ toggleDay(d, div) })
+    if(selectedDays.has(d)) {
+      div.style.boxShadow='0 6px 18px rgba(66,97,242,0.04)'
+      div.style.background='#eff6ff'
+    }
+    weeklyList.appendChild(div)
+  })
+  if(weeklyTotalMs > 0){ 
+    weeklyTotalBox.style.display='block'
+    weeklyTotalLabel.textContent = fmt(weeklyTotalMs)
+  } else weeklyTotalBox.style.display='none'
+  renderSelected()
+  renderWeeklyChart()
+}
+
+function toggleDay(d, el){ 
+  if(selectedDays.has(d)){ 
+    selectedDays.delete(d)
+    el.style.boxShadow='none'
+    el.style.background='#fbfbff'
+  } else { 
+    selectedDays.add(d)
+    el.style.boxShadow='0 6px 18px rgba(66,97,242,0.04)'
+    el.style.background='#eff6ff'
+  }
+  renderSelected()
+}
+
+function renderSelected(){ 
+  openedDays.innerHTML = ''
+  if(selectedDays.size === 0) return
+  selectedDays.forEach(d=>{ 
+    ensureDay(d)
+    const panel = document.createElement('div')
+    panel.className='compact-day'
+    const header = document.createElement('div')
+    header.style.display='flex'
+    header.style.justifyContent='space-between'
+    header.style.alignItems='center'
+    header.style.marginBottom='8px'
+    const title = document.createElement('div')
+    title.innerHTML = `<strong>${d} (${weekdayName(d)})</strong>`
+    const closeBtn = document.createElement('button')
+    closeBtn.className='btn ghost'
+    closeBtn.style.fontSize='12px'
+    closeBtn.textContent='閉じる'
+    closeBtn.onclick = ()=>{ selectedDays.delete(d); renderSelected(); renderTotals() }
+    header.appendChild(title)
+    header.appendChild(closeBtn)
+    panel.appendChild(header)
+    const grid = document.createElement('div')
+    grid.className='compact-grid'
+    for(let h=0; h<24; h++){ 
+      const hourCol = document.createElement('div')
+      hourCol.className='compact-hour'
+      const hh = document.createElement('div')
+      hh.className='hour-header'
+      hh.style.fontSize='12px'
+      hh.style.marginBottom='6px'
+      hh.textContent = `${h}:00`
+      const cell = document.createElement('div')
+      cell.className='compact-cell'
+      const segWrap = document.createElement('div')
+      segWrap.style.display='flex'
+      segWrap.style.height='100%'
+      const segs = state.hourSegments[d][h]
+      for(let i=0;i<SEG_H;i++){ 
+        const s = segs[i]
+        const segDiv = document.createElement('div')
+        segDiv.style.flex='0 0 calc(100% / '+SEG_H+')'
+        segDiv.style.position='relative'
+        const fill = document.createElement('div')
+        fill.style.height='100%'
+        const pct = Math.max(0, Math.min(1, (s.filledMs||0)/SEG_MS))
+        if(s.subject && state.colors[s.subject]) {
+          fill.style.background = `linear-gradient(90deg, ${state.colors[s.subject]}, ${shade(state.colors[s.subject],-8)})`
+        } else fill.style.background = 'transparent'
+        fill.style.width = (pct*100) + '%'
+        segDiv.appendChild(fill)
+        segWrap.appendChild(segDiv)
+      }
+      cell.appendChild(segWrap)
+      hourCol.appendChild(hh)
+      hourCol.appendChild(cell)
+      grid.appendChild(hourCol)
+    }
+    panel.appendChild(grid)
+    openedDays.appendChild(panel)
+  })
+}
+
+function renderWeeklyChart(){
+  const chartDiv = weeklyChart
+  if(!chartDiv) return
+  chartDiv.innerHTML = ''
+  const days = lastNDates(dateInput.value || todayY(), 7)
+  const totals = days.map(d => { 
+    if(!state.hourSegments[d]) return 0
+    return state.hourSegments[d].reduce((a,h)=>a+h.reduce((aa,s)=>aa + (s.filledMs||0),0),0) / 3600000
+  })
+  const containerW = chartDiv.clientWidth
+  const containerH = chartDiv.clientHeight || 160
+  if(containerW === 0){ requestAnimationFrame(renderWeeklyChart); return }
+  const margin = { top: 20, right: 12, bottom: 28, left: 12 }
+  const w = containerW, h = containerH
+  const innerW = Math.max(10, w - margin.left - margin.right)
+  const innerH = Math.max(10, h - margin.top - margin.bottom)
+  const svgNS = "http://www.w3.org/2000/svg"
+  const svg = document.createElementNS(svgNS,'svg')
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`)
+  svg.setAttribute('width', '100%')
+  svg.setAttribute('height', '100%')
+  for(let i=0;i<=4;i++){ 
+    const ly = margin.top + i * (innerH / 4)
+    const line = document.createElementNS(svgNS,'line')
+    line.setAttribute('x1', margin.left)
+    line.setAttribute('x2', margin.left + innerW)
+    line.setAttribute('y1', ly)
+    line.setAttribute('y2', ly)
+    line.setAttribute('stroke', 'rgba(15,23,36,0.04)')
+    line.setAttribute('stroke-width', '1')
+    svg.appendChild(line)
+  }
+  const n = totals.length
+  const stepX = n > 1 ? innerW / (n-1) : innerW
+  const maxTotal = Math.max(...totals, 1)
+  const points = totals.map((t,i)=>{ 
+    const x = Math.round(margin.left + i * stepX)
+    const y = Math.round(margin.top + (1 - (t / maxTotal)) * innerH)
+    return [x,y]
+  })
+  const path = document.createElementNS(svgNS,'path')
+  const d = points.map((p,i)=> i===0?`M${p[0]} ${p[1]}`:`L${p[0]} ${p[1]}`).join(' ')
+  path.setAttribute('d', d)
+  path.setAttribute('fill', 'none')
+  path.setAttribute('stroke', '#4461f2')
+  path.setAttribute('stroke-width', '3')
+  svg.appendChild(path)
+  try{ 
+    const area = document.createElementNS(svgNS,'path')
+    const areaD = `${d} L ${margin.left + innerW} ${margin.top + innerH} L ${margin.left} ${margin.top + innerH} Z`
+    area.setAttribute('d', areaD)
+    area.setAttribute('fill', 'rgba(68,97,242,0.06)')
+    svg.insertBefore(area, path)
+  }catch(e){}
+  points.forEach((p,i)=>{ 
+    const circ = document.createElementNS(svgNS,'circle')
+    circ.setAttribute('cx', p[0])
+    circ.setAttribute('cy', p[1])
+    circ.setAttribute('r', 4)
+    circ.setAttribute('fill', '#4461f2')
+    svg.appendChild(circ)
+    const tx = document.createElementNS(svgNS,'text')
+    tx.setAttribute('x', p[0])
+    tx.setAttribute('y', h - 6)
+    tx.setAttribute('text-anchor','middle')
+    tx.setAttribute('font-size','11')
+    tx.setAttribute('fill','#0f1724')
+    tx.textContent = days[i].slice(5)
+    svg.appendChild(tx)
+    const vl = document.createElementNS(svgNS,'text')
+    vl.setAttribute('x', p[0])
+    vl.setAttribute('y', p[1] - 8)
+    vl.setAttribute('text-anchor','middle')
+    vl.setAttribute('font-size','11')
+    vl.setAttribute('fill','#0f1724')
+    vl.textContent = totals[i].toFixed(1) + 'h'
+    svg.appendChild(vl)
+  })
+  chartDiv.appendChild(svg)
+}
+
+let _chartResizeObserver = null
+let _chartResizeDebounce = null
+function observeWeeklyChartResize(){ 
+  const chartDiv = weeklyChart
+  if(!chartDiv) return
+  if(_chartResizeObserver) _chartResizeObserver.disconnect()
+  _chartResizeObserver = new ResizeObserver(entries=>{ 
+    if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce)
+    _chartResizeDebounce = setTimeout(renderWeeklyChart, 120)
+  })
+  _chartResizeObserver.observe(chartDiv)
+  window.addEventListener('resize', ()=>{ 
+    if(_chartResizeDebounce) clearTimeout(_chartResizeDebounce)
+    _chartResizeDebounce = setTimeout(renderWeeklyChart, 120)
+  })
+}
+
+function getSegmentStartMs(ts){ 
+  const d = new Date(ts)
+  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const minutesSinceDay = Math.floor((ts - dayStart)/60000)
+  const segIndexOverall = Math.floor(minutesSinceDay / SEG_MIN)
+  return dayStart + segIndexOverall * SEG_MS
+}
+
+function allocateDelta(prevMs, nowMs){ 
+  if(nowMs <= prevMs) return
+  let cur = prevMs
+  const subject = sel
+  while(cur < nowMs){ 
+    const segStart = getSegmentStartMs(cur)
+    const segEnd = segStart + SEG_MS
+    const addAvailable = Math.min(segEnd, nowMs) - cur
+    const d = new Date(segStart)
+    const dateStr = ymd(d)
+    const hour = d.getHours()
+    const minutesSinceHour = Math.floor((segStart - new Date(d.getFullYear(), d.getMonth(), d.getDate(), hour).getTime())/60000)
+    const segIndex = Math.floor(minutesSinceHour / SEG_MIN)
+    ensureDay(dateStr)
+    const seg = state.hourSegments[dateStr][hour][segIndex]
+    const before = seg.filledMs || 0
+    const canAdd = Math.min(SEG_MS - before, addAvailable)
+    if(canAdd > 0){ 
+      if(!seg.subject) seg.subject = subject
+      seg.filledMs = before + canAdd
+      state.timer.sessionAccumulatedMs = (state.timer.sessionAccumulatedMs || 0) + canAdd
+      cur += canAdd
+    } else cur = segEnd
+  }
+}
+
+function tick(){ 
+  const now = Date.now()
+  const prev = state.timer._lastTick || now
+  allocateDelta(prev, now)
+  state.timer._lastTick = now
+  updateElapsedDisplay()
+  renderAll()
+}
+
+function updateElapsedDisplay(){ 
+  elapsedLabel.textContent = fmt(state.timer.sessionAccumulatedMs || 0)
+  const dateStr = dateInput.value
+  ensureDay(dateStr)
+  const todayMs = state.hourSegments[dateStr].reduce((a,h)=>a + h.reduce((aa,seg)=>aa + (seg.filledMs||0),0),0)
+  todayTotalLabel.textContent = fmt(todayMs)
+}
+
+function startTimer(){ 
+  if(state.timer.running) return
+  state.timer.running = true
+  state.timer._lastTick = Date.now()
+  window._tickI = setInterval(tick, 1000)
+  updateButtonStyles()
+  saveLocal()
+}
+
+async function pauseTimer(){
+  if(!state.timer.running) return
+  console.log('⏸️ タイマー停止処理開始')
+  tick()
+  state.timer.running = false
+  clearInterval(window._tickI)
+  state.timer._lastTick = null
+  const studyTimeMs = state.timer.sessionAccumulatedMs || 0
+  console.log('📊 記録する勉強時間:', studyTimeMs, 'ms (', (studyTimeMs/60000).toFixed(1), '分)')
+  state.timer.sessionAccumulatedMs = 0
+  updateElapsedDisplay()
+  updateButtonStyles()
+  saveLocal()
+  renderAll()
+  if(studyTimeMs >= 1000){
+    if(!currentUser){
+      console.warn('⚠️ 未ログイン')
+      alert('未ログイン状態です。データを保存するにはログインしてください。')
+      return
+    }
+    try{
+      console.log('💾 Supabaseへ保存開始...')
+      const now = new Date()
+      const dateStr = ymd(now)
+      const { data, error } = await supabase.from('study_records').insert([{
+        user_id: currentUser.id,
+        study_date: dateStr,
+        study_time_ms: studyTimeMs,
+        recorded_at: now.toISOString()
+      }])
+      if(error){
+        console.error('❌ Supabase保存エラー:', error)
+        alert('データ保存に失敗しました: ' + error.message)
+      } else {
+        console.log('✅ Supabase保存成功')
+        alert(`お疲れ様でした!\n${fmt(studyTimeMs)} を記録しました。`)
+      }
+    }catch(e){
+      console.error('❌ 保存処理の例外:', e)
+      alert('データ保存中にエラーが発生しました')
+    }
+  } else console.log('⭐️ 1秒未満のため保存スキップ')
+  console.log('⏸️ タイマー停止処理完了')
+}
+
+function resetTimer(){ 
+  if(!confirm('タイマーをリセットします。よろしいですか?')) return
+  state.timer.running = false
+  clearInterval(window._tickI)
+  state.timer._lastTick = null
+  state.timer.sessionAccumulatedMs = 0
+  updateElapsedDisplay()
+  updateButtonStyles()
+  saveLocal()
+  renderAll()
+}
+
+function onSetNow(){ 
+  startTimeInput.value = timeIn(new Date())
+}
+
+function updateButtonStyles(){ 
+  if(state.timer.running){ 
+    startBtn.textContent = '停止'
+    startBtn.classList.add('running')
+  } else { 
+    startBtn.textContent = '開始'
+    startBtn.classList.remove('running')
+  }
+}
+
+startBtn.addEventListener('click', ()=> {
+  if(state.timer.running) pauseTimer()
+  else startTimer()
+})
+resetBtn.addEventListener('click', resetTimer)
+setNowBtn.addEventListener('click', onSetNow)
+dateInput.addEventListener('change', ()=> renderAll())
+
+;(async function init(){
+  console.log('🚀 アプリ初期化開始')
+  loadLocal()
+  if(!dateInput.value) dateInput.value = todayY()
+  if(!startTimeInput.value) startTimeInput.value = timeIn(new Date())
+  buildPalette()
+  buildGrid()
+  renderAll()
+  await checkAuth()
+  observeWeeklyChartResize()
+  renderWeeklyChart()
+  console.log('✅ アプリ初期化完了')
+})()
 </script>
 </body>
 </html>
