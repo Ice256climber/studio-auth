@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>平均グラフ (単体機能版)</title>
+  <style>
+    /* 必要なスタイルのみ定義 */
+    :root { 
+      --bg: #f6f8fb; 
+      --card: #ffffff; 
+      --text: #0f1724;
+      --text-sub: #6b7280;
+      --avg-color: #10b981; /* 平均用の緑色 */
+    }
+
+    * { box-sizing: border-box; }
+    body { font-family: Inter, sans-serif; background: var(--bg); padding: 20px; color: var(--text); }
+    
+    /* カードデザイン */
+    .avg-card {
+      background: var(--card);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.06);
+      border: 1px solid #e5e7eb;
+      max-width: 500px; /* 単体表示用に見やすく制限 */
+      margin: 0 auto;
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+      padding-bottom: 16px;
+      border-bottom: 2px solid #f3f4f6;
+    }
+    
+    .title { font-size: 20px; font-weight: 700; color: var(--avg-color); margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: var(--text-sub); }
+    .total-time { font-size: 32px; font-weight: 800; color: var(--avg-color); }
+    .total-label { font-size: 11px; color: var(--text-sub); margin-top: 4px; }
+    
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .stat-box {
+      flex: 1;
+      text-align: center;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 8px;
+    }
+    .stat-val { font-size: 22px; font-weight: 700; color: var(--avg-color); }
+    .stat-lbl { font-size: 11px; color: var(--text-sub); margin-top: 4px; }
+    
+    .chart-area {
+      width: 100%;
+      position: relative;
+    }
+
+    .loading-status {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-sub);
+    }
+  </style>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.js"></script>
+
+</head>
+<body>
+  <div class="avg-card" id="averageCardContainer">
+    <div class="loading-status">
+        データを読み込み中...
+    </div>
+  </div>
+
+  <script>
+    // UMD版で読み込まれたグローバル変数からcreateClientを取得
+    const { createClient } = window.supabase
+
+    const SUPABASE_URL = 'https://pscowkpzgomszpvjtnge.supabase.co'
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzY293a3B6Z29tc3pwdmp0bmdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjA0MjIwNTUsImV4cCI6MjA3NTk5ODA1NX0.CVRZM4e-vXxGWzLCK6aOIANJjQ0NpVwSuTfTeQbvQg0'
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+    const ymd = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+
+    function lastNDates(n) {
+      const today = new Date()
+      const arr = []
+      for(let i = n-1; i >= 0; i--) {
+        const d = new Date(today)
+        d.setDate(today.getDate() - i)
+        arr.push(ymd(d))
+      }
+      return arr
+    }
+
+    function drawChart(canvasId, dates, values) {
+      const canvas = document.getElementById(canvasId)
+      if (!canvas) return
+      
+      const ctx = canvas.getContext('2d')
+      const width = canvas.width
+      const height = canvas.height
+      
+      // 背景
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, width, height)
+      
+      // グリッド線
+      ctx.strokeStyle = '#f0f0f0'
+      ctx.lineWidth = 1
+      for(let i = 0; i <= 4; i++) {
+        const y = (height - 40) * (i / 4) + 10
+        ctx.beginPath()
+        ctx.moveTo(40, y)
+        ctx.lineTo(width - 10, y)
+        ctx.stroke()
+      }
+      
+      const maxValue = Math.max(...values, 1)
+      const stepX = (width - 60) / (dates.length - 1)
+      
+      // データポイント計算
+      const points = values.map((val, i) => ({
+        x: 40 + i * stepX,
+        y: 10 + (height - 50) * (1 - val / maxValue)
+      }))
+      
+      // エリア塗りつぶし
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.1)' // --avg-color の透明度付き
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, height - 30)
+      points.forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.lineTo(points[points.length - 1].x, height - 30)
+      ctx.closePath()
+      ctx.fill()
+      
+      // 折れ線
+      ctx.strokeStyle = '#10b981' // --avg-color
+      ctx.lineWidth = 3
+      ctx.beginPath()
+      ctx.moveTo(points[0].x, points[0].y)
+      points.forEach(p => ctx.lineTo(p.x, p.y))
+      ctx.stroke()
+      
+      // ポイント
+      points.forEach((p, i) => {
+        ctx.fillStyle = '#10b981'
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2)
+        ctx.fill()
+        
+        // 値ラベル
+        ctx.fillStyle = '#0f1724'
+        ctx.font = '11px Inter, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(values[i].toFixed(1) + 'h', p.x, p.y - 10)
+      })
+      
+      // 日付ラベル
+      dates.forEach((date, i) => {
+        const x = 40 + i * stepX
+        ctx.fillStyle = '#6b7280'
+        ctx.font = '10px Inter, sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(date.slice(5), x, height - 10)
+      })
+    }
+
+    async function loadAverageData() {
+      try {
+        console.log('📊 平均データ読み込み開始')
+        
+        const dates = lastNDates(7)
+        
+        // 過去7日間のデータ取得
+        const { data: records, error } = await supabase
+          .from('study_records')
+          .select('user_id, study_date, study_time_ms')
+          .gte('study_date', dates[0])
+          .lte('study_date', dates[dates.length - 1])
+        
+        if (error) throw error
+        
+        // ユニークユーザー数の特定
+        const uniqueUserIds = [...new Set(records.map(r => r.user_id))]
+        const totalStudents = uniqueUserIds.length
+
+        if (totalStudents === 0) {
+            document.getElementById('averageCardContainer').innerHTML = `<div class="loading-status">まだ学習データがありません。</div>`
+            return
+        }
+
+        // 全体の平均データの計算
+        const avgDailyValues = dates.map(date => {
+            // その日の全レコードの合計時間
+            const dailySumMs = records
+                .filter(r => r.study_date === date)
+                .reduce((sum, r) => sum + r.study_time_ms, 0)
+            
+            // 平均計算 (ms -> hours)
+            return (dailySumMs / totalStudents) / 3600000
+        })
+
+        // 全期間の合計学習時間（一人あたり平均）
+        const totalAvgHours = avgDailyValues.reduce((sum, h) => sum + h, 0)
+        
+        // 全期間の平均学習回数を計算 (ユーザーごとの回数を合計し、ユーザー数で割る)
+        const userStudyCounts = {}
+        records.forEach(r => {
+            if (!userStudyCounts[r.user_id]) userStudyCounts[r.user_id] = 0
+            userStudyCounts[r.user_id]++
+        })
+        const totalStudyCount = Object.values(userStudyCounts).reduce((sum, c) => sum + c, 0)
+        const avgCountPerUser = totalStudyCount / totalStudents
+
+        const maxAvgDay = Math.max(...avgDailyValues, 0)
+
+        // HTML出力
+        document.getElementById('averageCardContainer').innerHTML = `
+          <div class="card-header">
+             <div>
+                <div class="title">クラス平均</div>
+                <div class="subtitle">全生徒の平均学習推移（${dates[0].slice(5)} ~ ${dates[dates.length - 1].slice(5)}）</div>
+              </div>
+              <div>
+                <div class="total-time">${totalAvgHours.toFixed(1)}h</div>
+                <div class="total-label">1人あたり期間合計</div>
+              </div>
+            </div>
+            
+            <div class="stats-row">
+              <div class="stat-box">
+                <div class="stat-val">${avgCountPerUser.toFixed(1)}</div>
+                <div class="stat-lbl">平均学習回数</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val">${(avgCountPerUser > 0 ? totalAvgHours / avgCountPerUser : 0).toFixed(1)}h</div>
+                <div class="stat-lbl">1回平均</div>
+              </div>
+              <div class="stat-box">
+                <div class="stat-val">${maxAvgDay.toFixed(1)}h</div>
+                <div class="stat-lbl">最高値(日)</div>
+              </div>
+            </div>
+
+            <div class="chart-area">
+              <canvas id="avgChartCanvas" width="450" height="220"></canvas>
+            </div>
+        `
+
+        // 描画実行（HTML反映後）
+        setTimeout(() => {
+          drawChart('avgChartCanvas', dates, avgDailyValues)
+        }, 50)
+
+      } catch (e) {
+        console.error('❌ データ読み込みエラー:', e)
+        document.getElementById('averageCardContainer').innerHTML = `<p style="color:red">エラーが発生しました: ${e.message}。Supabaseの設定やネットワークをご確認ください。</p>`
+      }
+    }
+    
+    // 初期化と30秒ごとの更新
+    loadAverageData()
+    setInterval(loadAverageData, 30000)
+  </script>
+</body>
+</html>
